@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package ser;
+
+option java_package = "dmg.cells.nucleus";
+option java_outer_classname = "ProtosCellMessage";
+
+message CellMessage {
+
+    int64 creationTime = 1;
+    int64 ttl = 2;
+    bool isPersistent = 3;
+    int32 mode = 4;
+    bytes messageStream = 5; // already encoded message payload
+
+    UOID umid = 6;
+    UOID lastUmid = 7;
+    CellPath source = 8;
+    CellPath destination = 9;
+    Session session = 10;
+}
+
+message UOID {
+    int64 counter = 1;
+    int64 time = 2;
+}
+
+message CellPath {
+    repeated CellAddressCore list = 1;
+    int32 position = 2;
+}
+
+message CellAddressCore {
+    string domain = 1;
+    string cell = 2;
+}
+
+
+message Session {
+    // In code, Software is of type object
+    // Speculation, that it is only filled with string values
+    string session = 1;
+}

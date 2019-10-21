@@ -378,6 +378,8 @@ public class LocationMgrTunnel
         public void writeObject(CellMessage message) throws IOException
         {
             message.writeTo(out);
+            // TODO: encode CellMessage with protobuf
+            message.writeProtoEncodedTo(out);
             out.flush();
         }
     }

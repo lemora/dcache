@@ -133,4 +133,26 @@ public final class CellAddressCore implements Cloneable, Serializable, Comparabl
     {
         return (_domain == null) ? new CellAddressCore(_cell, null) : this;
     }
+
+    /**
+     * Encodes the class using protobuf.
+     * @return Protobuf class object
+     */
+    public ProtosCellMessage.CellAddressCore toProtoObject() {
+        ProtosCellMessage.CellAddressCore.Builder protoCellAddrCore = ProtosCellMessage.CellAddressCore.newBuilder();
+
+        protoCellAddrCore.setDomain(_domain);
+        protoCellAddrCore.setCell(_cell);
+
+        return protoCellAddrCore.build();
+    }
+
+    /**
+     * Constructs an object from a protobuf representation.
+     */
+    public CellAddressCore(ProtosCellMessage.CellAddressCore protoCellAddrCore) {
+        _cell = protoCellAddrCore.getCell();
+        _domain = protoCellAddrCore.getDomain();
+    }
+
 }

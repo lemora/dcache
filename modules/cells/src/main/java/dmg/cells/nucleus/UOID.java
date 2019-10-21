@@ -86,4 +86,25 @@ public final class UOID implements Serializable, Cloneable {
     {
         return new UOID(in.readLong(), in.readLong());
     }
+
+    /**
+     * Encodes the class using protobuf.
+     * @return Protobuf class object
+     */
+    public ProtosCellMessage.UOID toProtoObject() {
+        ProtosCellMessage.UOID.Builder protoUOID = ProtosCellMessage.UOID.newBuilder();
+
+        protoUOID.setCounter(_counter);
+        protoUOID.setTime(_time);
+
+        return protoUOID.build();
+    }
+
+    /**
+     * Constructs an object from a protobuf representation.
+     */
+    public UOID(ProtosCellMessage.UOID protoUOID) {
+        _counter = protoUOID.getCounter();
+        _time = protoUOID.getTime();
+    }
 }

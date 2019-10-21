@@ -6,10 +6,7 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Stream;
 
 import static com.google.common.base.Preconditions.checkArgument;
@@ -356,5 +353,34 @@ public final class CellPath implements Cloneable, Serializable
             list.add(new CellAddressCore(in.readUTF(), in.readUTF().intern()));
         }
         return new CellPath(position, list);
+    }
+
+    /**
+     * Encodes the class using protobuf.
+     * @return Protobuf class object
+     */
+    public ProtosCellMessage.CellPath toProtoObject() {
+        ProtosCellMessage.CellPath.Builder protoCellPath = ProtosCellMessage.CellPath.newBuilder();
+
+        protoCellPath.setPosition(_position);
+
+        List<ProtosCellMessage.CellAddressCore> protoCellAddrCores = _list
+                .stream()
+                .map(e -> e.toProtoObject())
+                .collect(toList());
+        protoCellPath.addAllList(protoCellAddrCores);
+
+        return protoCellPath.build();
+    }
+
+    /**
+     * Constructs an object from a protobuf representation.
+     */
+    public CellPath(ProtosCellMessage.CellPath protoCellPath) {
+        _position = protoCellPath.getPosition();
+        _list = protoCellPath.getListList()
+                .stream()
+                .map(c -> new CellAddressCore(c))
+                .collect(toList());
     }
 }

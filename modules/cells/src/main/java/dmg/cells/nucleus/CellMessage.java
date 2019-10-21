@@ -1,19 +1,12 @@
 package dmg.cells.nucleus ;
 
 import com.google.common.base.Strings;
-import com.google.common.base.Throwables;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.DataInput;
-import java.io.DataOutput;
-import java.io.IOException;
-import java.io.InvalidClassException;
-import java.io.NotSerializableException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.Serializable;
+import java.io.*;
 import java.util.Objects;
+
+import com.google.protobuf.ByteString;
+import com.google.protobuf.InvalidProtocolBufferException;
 
 import static com.google.common.base.Preconditions.checkState;
 
@@ -26,6 +19,11 @@ import static com.google.common.base.Preconditions.checkState;
 public final class CellMessage implements Cloneable , Serializable {
 
   private static final long serialVersionUID = -5559658187264201731L;
+
+    private static final byte[] PS_MESSAGE_HEADER = new byte[] {
+            0x05, 0x4d,   // 054D -> [o]bject [s]tream [for] [d]Cache
+            0x00, 0x01    // version 1
+    };
 
   /**
    * Maximum TTL adjustment in milliseconds.
@@ -292,17 +290,73 @@ public boolean equals( Object obj ){
     }
 
     /**
+     * Writes CellMessage protobuf-encoded to a data output stream.
+     * <p>
+     * The CellMessage must be in stream mode.
+     * <p>
+     * This is the new encoding used by tunnels since release 6.1.
+     */
+    public void writeProtoEncodedTo(DataOutput out) throws IOException {
+        checkState(_mode == STREAM_MODE);
+//        byte[] encodedWithHeader = Bytes.concat(PS_MESSAGE_HEADER, encoded);
+        out.write(PS_MESSAGE_HEADER,0,4);
+//        out.writeInt(encoded.length);
+//        out.write(encoded);
+        createProtoObject().writeTo((OutputStream) out);
+    }
+
+    /**
+     * Encodes the class using protobuf.
+     * @return Protobuf class object
+     */
+    public ProtosCellMessage.CellMessage createProtoObject() {
+        ProtosCellMessage.CellMessage.Builder protoCellMsg = ProtosCellMessage.CellMessage.newBuilder();
+
+        protoCellMsg.setMode(_mode);
+        protoCellMsg.setIsPersistent(_isPersistent);
+        protoCellMsg.setCreationTime(_creationTime);
+        protoCellMsg.setTtl(_ttl);
+        protoCellMsg.setUmid(_umid.toProtoObject());
+        protoCellMsg.setLastUmid(_lastUmid.toProtoObject());
+        protoCellMsg.setSource(_source.toProtoObject());
+        protoCellMsg.setDestination(_destination.toProtoObject());
+
+        ProtosCellMessage.Session.Builder protoSession = ProtosCellMessage.Session.newBuilder();
+        if(_session != null) { protoSession.setSession(_session.toString()); }
+        protoCellMsg.setSession(protoSession);
+
+        // left out length of message! will be done by protobuf internally
+        protoCellMsg.setMessageStream(ByteString.copyFrom(_messageStream));
+        return protoCellMsg.build();
+    }
+
+    /**
      * Reads CellMessage from a data input stream.
      *
      * This is the raw encoding used by tunnels since release 3.0.
      */
     public static CellMessage createFrom(DataInput in) throws IOException
     {
-        CellMessage message = new CellMessage();
-        message._mode = in.readByte();
-        if (message._mode != STREAM_MODE) {
+        byte byte_01 = in.readByte();
+        if (byte_01 == STREAM_MODE) {
+            return createFromJosEncoding(in);
+        }
+        else if (byte_01 == PS_MESSAGE_HEADER[0]) {
+            if(in.readByte() != PS_MESSAGE_HEADER[1]
+                    || in.readByte() != PS_MESSAGE_HEADER[2]
+                    || in.readByte() != PS_MESSAGE_HEADER[3]) {
+                throw new IOException("Invalid message serialization header.");
+            }
+            return new CellMessage(in);
+        }
+        else { // ORIGINAL_MODE or other, undefined
             throw new IOException("Invalid message tunnel wire format.");
         }
+    }
+
+    private static CellMessage createFromJosEncoding(DataInput in) throws IOException {
+        CellMessage message = new CellMessage();
+        message._mode = STREAM_MODE;
         /* Need to initialize the transient reception time after the first field is read as
          * this function may have been called while the input stream is empty.
          */
@@ -320,4 +374,32 @@ public boolean equals( Object obj ){
         in.readFully(message._messageStream);
         return message;
     }
+
+    /**
+     * Constructs an object from a byte stream encoded using Protobuf
+     */
+    public CellMessage(DataInput in) throws IOException, IllegalArgumentException {
+        ProtosCellMessage.CellMessage decodedProto = null;
+        decodedProto = ProtosCellMessage.CellMessage.parseFrom((InputStream) in);
+//
+//        try {
+//            decodedProto = ProtosCellMessage.CellMessage.parseFrom(encoded);
+//        }
+//        catch (InvalidProtocolBufferException e) {
+//            throw new IllegalArgumentException("Serialized message cannot be deserialized using protobuf!");
+//        }
+
+        _mode = decodedProto.getMode();
+        _receivedAt = System.currentTimeMillis();
+        _isPersistent = decodedProto.getIsPersistent();
+        _creationTime = decodedProto.getCreationTime();
+        _ttl = decodedProto.getTtl();
+        _umid = new UOID(decodedProto.getUmid());
+        _lastUmid = new UOID(decodedProto.getLastUmid());
+        _source = new CellPath(decodedProto.getSource());
+        _destination = new CellPath(decodedProto.getDestination());
+        _session = Strings.emptyToNull(decodedProto.getSession().getSession());
+        _messageStream = decodedProto.getMessageStream().toByteArray();
+    }
+
 }
