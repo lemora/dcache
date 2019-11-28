@@ -5,9 +5,6 @@ import com.google.common.base.Strings;
 import java.io.*;
 import java.util.Objects;
 
-import com.google.protobuf.ByteString;
-import com.google.protobuf.InvalidProtocolBufferException;
-
 import static com.google.common.base.Preconditions.checkState;
 
 /**
@@ -298,11 +295,13 @@ public boolean equals( Object obj ){
      */
     public void writeProtoEncodedTo(DataOutput out) throws IOException {
         checkState(_mode == STREAM_MODE);
-//        byte[] encodedWithHeader = Bytes.concat(PS_MESSAGE_HEADER, encoded);
         out.write(PS_MESSAGE_HEADER,0,4);
-//        out.writeInt(encoded.length);
-//        out.write(encoded);
-        createProtoObject().writeTo((OutputStream) out);
+//        createProtoObject().writeTo((OutputStream) out);
+        byte[] protoEncoded = createProtoObject().toByteArray();
+        out.writeInt(protoEncoded.length);
+        out.write(protoEncoded);
+        out.writeInt(_messageStream.length);
+        out.write(_messageStream);
     }
 
     /**
@@ -326,7 +325,7 @@ public boolean equals( Object obj ){
         protoCellMsg.setSession(protoSession);
 
         // left out length of message! will be done by protobuf internally
-        protoCellMsg.setMessageStream(ByteString.copyFrom(_messageStream));
+//        protoCellMsg.setMessageStream(ByteString.EMPTY);
         return protoCellMsg.build();
     }
 
@@ -341,15 +340,13 @@ public boolean equals( Object obj ){
         if (byte_01 == STREAM_MODE) {
             return createFromJosEncoding(in);
         }
-        else if (byte_01 == PS_MESSAGE_HEADER[0]) {
-            if(in.readByte() != PS_MESSAGE_HEADER[1]
-                    || in.readByte() != PS_MESSAGE_HEADER[2]
-                    || in.readByte() != PS_MESSAGE_HEADER[3]) {
-                throw new IOException("Invalid message serialization header.");
-            }
-            return new CellMessage(in);
+        else if (byte_01 == PS_MESSAGE_HEADER[0]
+                && in.readByte() == PS_MESSAGE_HEADER[1]
+                && in.readByte() == PS_MESSAGE_HEADER[2]
+                && in.readByte() == PS_MESSAGE_HEADER[3]) {
+            return createFromProtoEncoding(in);
         }
-        else { // ORIGINAL_MODE or other, undefined
+        else { // ORIGINAL_MODE or uninterpretable byte array
             throw new IOException("Invalid message tunnel wire format.");
         }
     }
@@ -378,28 +375,30 @@ public boolean equals( Object obj ){
     /**
      * Constructs an object from a byte stream encoded using Protobuf
      */
-    public CellMessage(DataInput in) throws IOException, IllegalArgumentException {
-        ProtosCellMessage.CellMessage decodedProto = null;
-        decodedProto = ProtosCellMessage.CellMessage.parseFrom((InputStream) in);
-//
-//        try {
-//            decodedProto = ProtosCellMessage.CellMessage.parseFrom(encoded);
-//        }
-//        catch (InvalidProtocolBufferException e) {
-//            throw new IllegalArgumentException("Serialized message cannot be deserialized using protobuf!");
-//        }
+    public static CellMessage createFromProtoEncoding(DataInput in) throws IOException, IllegalArgumentException {
+        CellMessage message = new CellMessage();
 
-        _mode = decodedProto.getMode();
-        _receivedAt = System.currentTimeMillis();
-        _isPersistent = decodedProto.getIsPersistent();
-        _creationTime = decodedProto.getCreationTime();
-        _ttl = decodedProto.getTtl();
-        _umid = new UOID(decodedProto.getUmid());
-        _lastUmid = new UOID(decodedProto.getLastUmid());
-        _source = new CellPath(decodedProto.getSource());
-        _destination = new CellPath(decodedProto.getDestination());
-        _session = Strings.emptyToNull(decodedProto.getSession().getSession());
-        _messageStream = decodedProto.getMessageStream().toByteArray();
+        int protoHeaderLength = in.readInt();
+        byte[] protoEncodedHeader = new byte[protoHeaderLength];
+        in.readFully(protoEncodedHeader);
+
+        ProtosCellMessage.CellMessage decodedProto = ProtosCellMessage.CellMessage.parseFrom(protoEncodedHeader);
+        message._mode = decodedProto.getMode();
+        message._receivedAt = System.currentTimeMillis();
+        message._isPersistent = decodedProto.getIsPersistent();
+        message._creationTime = decodedProto.getCreationTime();
+        message._ttl = decodedProto.getTtl();
+        message._umid = new UOID(decodedProto.getUmid());
+        message._lastUmid = new UOID(decodedProto.getLastUmid());
+        message._source = new CellPath(decodedProto.getSource());
+        message._destination = new CellPath(decodedProto.getDestination());
+        message._session = Strings.emptyToNull(decodedProto.getSession().getSession());
+//        message._messageStream = decodedProto.getMessageStream().toByteArray();
+
+        int payloadLength = in.readInt();
+        message._messageStream = new byte[payloadLength];
+        in.readFully(message._messageStream);
+        return message;
     }
 
 }

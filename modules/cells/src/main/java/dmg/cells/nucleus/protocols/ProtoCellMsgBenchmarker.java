@@ -9,9 +9,9 @@ import java.util.concurrent.TimeUnit;
 
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
-@Fork(value = 1)
+@Fork(value = 2)
 @Warmup(iterations = 4, time = 5, timeUnit = TimeUnit.SECONDS)
-@Measurement(iterations = 8, time = 5, timeUnit = TimeUnit.SECONDS)
+@Measurement(iterations = 5, time = 10, timeUnit = TimeUnit.SECONDS)
 @State(Scope.Benchmark)
 public class ProtoCellMsgBenchmarker {
 

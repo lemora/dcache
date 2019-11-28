@@ -20,7 +20,7 @@ public class BenchmarkRunner {
 
         Options opt = new OptionsBuilder()
                 .include(simpleClassName)
-//                .resultFormat(ResultFormatType.JSON)
+                .resultFormat(ResultFormatType.JSON)
                 .result(pathToResults + fileName + ".json")
 //                .output(pathToResults + "-" + fileName + ".log")
                 .threads(1)
