@@ -35,7 +35,6 @@ import java.util.concurrent.Callable;
 import dmg.cells.nucleus.CellAddressCore;
 import dmg.cells.nucleus.CellCommandListener;
 import dmg.cells.nucleus.CellIdentityAware;
-import dmg.cells.nucleus.CellLifeCycleAware;
 import dmg.cells.zookeeper.CDCLeaderLatchListener;
 import dmg.util.command.Command;
 
