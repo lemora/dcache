@@ -73,10 +73,6 @@ COPYRIGHT STATUS:
 package gov.fnal.srm.util;
 
 import org.apache.axis.types.URI;
-
-import java.io.IOException;
-import java.util.HashMap;
-
 import org.dcache.srm.client.SRMClientV2;
 import org.dcache.srm.request.AccessLatency;
 import org.dcache.srm.request.RetentionPolicy;
@@ -102,11 +98,14 @@ import org.dcache.srm.v2_2.TReturnStatus;
 import org.dcache.srm.v2_2.TStatusCode;
 import org.dcache.srm.v2_2.TTransferParameters;
 
+import java.io.IOException;
+import java.util.HashMap;
+
 /**
  *
  * @author  timur
  */
-public class SRMBringOnlineClientV2 extends SRMClient implements Runnable {
+public class SRMBringOnlineClientFromFile extends SRMClient implements Runnable {
     private String[] protocols;
     java.net.URI from[];
     private HashMap<String,Integer>pendingSurlsToIndex = new HashMap<>();
@@ -114,7 +113,7 @@ public class SRMBringOnlineClientV2 extends SRMClient implements Runnable {
     private Thread hook;
     private ISRM srmv2;
     /** Creates a new instance of SRMBringOnlineClient */
-    public SRMBringOnlineClientV2(Configuration configuration, java.net.URI[] from) {
+    public SRMBringOnlineClientFromFile(Configuration configuration, java.net.URI[] from) {
         super(configuration);
         report = new Report(from,from,configuration.getReport());
         this.protocols = configuration.getProtocols();
@@ -172,7 +171,7 @@ public class SRMBringOnlineClientV2 extends SRMClient implements Runnable {
                 AccessLatency.fromString(configuration.getAccessLatency()).toTAccessLatency() : null;
             if ( (al!=null) && (rp==null)) {
                 throw new IllegalArgumentException("if access latency is specified, "+
-                                                   "then retention policy has to be specified as well");
+                                                   "then retention policy have to be specified as well");
             }
             else if ( rp!=null ) {
                 srmBringOnlineRequest.setTargetFileRetentionPolicyInfo(new TRetentionPolicyInfo(rp,al));
