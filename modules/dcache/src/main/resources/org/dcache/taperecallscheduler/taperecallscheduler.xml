@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+           http://www.springframework.org/schema/beans/spring-beans.xsd
+           http://www.springframework.org/schema/context
+           http://www.springframework.org/schema/context/spring-context.xsd">
+
+    <context:property-placeholder/>
+    <context:annotation-config/>
+
+    <bean id="tape-recall-scheduler" class="org.dcache.taperecallscheduler.TapeRecallScheduler">
+        <description>Scheduler for tape recall requests</description>
+        <property name="tapeRecallStrategy" ref="tape-recall-scheduling-strategy"/>
+    </bean>
+
+    <bean id="tape-recall-scheduling-strategy" class="org.dcache.taperecallscheduler.TapeRecallSchedulingStrategy">
+        <description>Strategy for scheduling tape recall requests</description>
+        <property name="requirementsChecker" ref="tape-recall-scheduling-requirements-checker"/>
+        <property name="tapeInfoProvider" ref="tape-info-provider"/>
+    </bean>
+
+    <bean id="tape-recall-scheduling-requirements-checker" class="org.dcache.taperecallscheduler.TapeRecallSchedulingRequirementsChecker">
+        <description>Holds config parameters for tape recall scheduling and moderates usage</description>
+        <property name="maxActiveTapes" value="${taperecallscheduler.num-drives}"/>
+        <property name="minTapeRecallPercentage" value="${taperecallscheduler.min-tape-recall-percentage}"/>
+        <property name="minNumberOfRequestsForTapeSelection" value="${taperecallscheduler.min-request-count-for-tape}"/>
+        <property name="minJobWaitingTime"
+                  value="#{ T(org.dcache.util.TimeUtils).durationOf('${taperecallscheduler.min-time-in-queue}', '${taperecallscheduler.min-time-in-queue.unit}')}"/>
+        <property name="maxJobWaitingTime"
+                  value="#{ T(org.dcache.util.TimeUtils).durationOf('${taperecallscheduler.max-time-in-queue}', '${taperecallscheduler.max-time-in-queue.unit}')}"/>
+    </bean>
+
+    <bean id="tape-info-provider" class="org.dcache.taperecallscheduler.FilebasedTapeInfoProvider">
+        <description>Tape location info provider for tape recall scheduling</description>
+        <property name="tapeInfoDir" value="${taperecallscheduler.tapeinfo-dir}"/>
+    </bean>
+
+</beans>

@@ -1,0 +1,15 @@
+# Starts the TapeRecallScheduler
+
+check -strong taperecallscheduler.cell.name
+check -strong taperecallscheduler.cell.enable
+check taperecallscheduler.tapeinfo-dir
+check taperecallscheduler.num-drives
+check taperecallscheduler.min-tape-recall-percentage
+check taperecallscheduler.min-request-count-for-tape
+check taperecallscheduler.max-time-in-queue
+check taperecallscheduler.max-time-in-queue.unit
+check taperecallscheduler.min-time-in-queue
+check taperecallscheduler.min-time-in-queue.unit
+
+create org.dcache.cells.UniversalSpringCell "${taperecallscheduler.cell.name}" \
+    "classpath:org/dcache/taperecallscheduler/taperecallscheduler.xml"

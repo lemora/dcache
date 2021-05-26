@@ -16,13 +16,13 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package org.dcache.srm.taperecallscheduling;
+package org.dcache.taperecallscheduler;
 
 /**
  * Bring online tape scheduling item for tracking a tape's meta-information relevant for job scheduling
  * Used for keeping track of and evaluating oldest and newest job arrival targeting the associated tape
  */
-public class SchedulingInfoTape {
+public class TapeSchedulingInfo {
     private static final long NO_VALUE = -1;
 
     // scheduling info

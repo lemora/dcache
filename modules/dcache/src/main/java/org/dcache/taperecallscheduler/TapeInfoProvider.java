@@ -1,4 +1,4 @@
-package org.dcache.srm.taperecallscheduling;
+package org.dcache.taperecallscheduler;
 
 import java.util.List;
 import java.util.Map;

@@ -1,4 +1,4 @@
-package org.dcache.srm.taperecallscheduling;
+package org.dcache.taperecallscheduler;
 
 import dmg.cells.nucleus.CellInfoProvider;
 
@@ -76,7 +76,7 @@ public class TapeRecallSchedulingRequirementsChecker implements CellInfoProvider
      * @param tape the scheduling info for the tape in question
      * @return whether the tape's oldest jost is expired
      */
-    public boolean isOldestTapeJobExpired(SchedulingInfoTape tape) {
+    public boolean isOldestTapeJobExpired(TapeSchedulingInfo tape) {
         if (tape.getOldestJobArrival() == NO_VALUE) {
             return false;
         }
@@ -89,7 +89,7 @@ public class TapeRecallSchedulingRequirementsChecker implements CellInfoProvider
      * @return if newest job for a tape is old enough for the tape to be selected
      * @param tape the scheduling info for the tape in question
      */
-    public boolean isNewestTapeJobOldEnough(SchedulingInfoTape tape) {
+    public boolean isNewestTapeJobOldEnough(TapeSchedulingInfo tape) {
         if (tape.getNewestJobArrival() == NO_VALUE) {
             return false;
         } else if (minJobWaitingTime == NO_VALUE) {
@@ -110,7 +110,7 @@ public class TapeRecallSchedulingRequirementsChecker implements CellInfoProvider
      * @param recallVolume Recall volume in kB
      * @return Whether the recall volume is sufficient
      */
-    public boolean isTapeRecallVolumeSufficient(SchedulingInfoTape tape, long recallVolume) {
+    public boolean isTapeRecallVolumeSufficient(TapeSchedulingInfo tape, long recallVolume) {
         if (!tape.hasTapeInfo()) {
             return minTapeRecallPercentage == 0;
         }
@@ -121,7 +121,7 @@ public class TapeRecallSchedulingRequirementsChecker implements CellInfoProvider
         return recallVolume * 100/ tape.getCapacity() >= minTapeRecallPercentage;
     }
 
-    public int compareOldestTapeRequestAge(SchedulingInfoTape first, SchedulingInfoTape second) {
+    public int compareOldestTapeRequestAge(TapeSchedulingInfo first, TapeSchedulingInfo second) {
         long arrivalFirst = first.getOldestJobArrival();
         long arrivalSecond = second.getOldestJobArrival();
         if (arrivalFirst == NO_VALUE && arrivalSecond == NO_VALUE) {
@@ -134,7 +134,7 @@ public class TapeRecallSchedulingRequirementsChecker implements CellInfoProvider
         return Long.compare(arrivalFirst, arrivalSecond);
     }
 
-    public boolean isJobExpired(SchedulingItemJob job) {
+    public boolean isJobExpired(BringOnlineJob job) {
         long age = System.currentTimeMillis() - job.getCreationTime();
         long correctedMaxAge = maxJobWaitingTime + TIME_SAFETY_MARGIN;
         return age > correctedMaxAge;
@@ -144,7 +144,7 @@ public class TapeRecallSchedulingRequirementsChecker implements CellInfoProvider
     @Override
     public void getInfo(PrintWriter pw) {
         pw.printf("Bring online scheduler parameters:\n");
-        pw.printf("    Max. active tapes: %s\n", maxActiveTapes);
+        pw.printf("    Tape drives: %s\n", maxActiveTapes);
         pw.printf("    Min. recall volume percentage for tape selection: %s\n", minTapeRecallPercentage);
         pw.printf("    Min. number of requests for tape selection: %s\n", minNumberOfRequestsForTapeSelection);
         pw.printf("    Min. age of newest request for tape selection: %s\n", minJobWaitingTime);

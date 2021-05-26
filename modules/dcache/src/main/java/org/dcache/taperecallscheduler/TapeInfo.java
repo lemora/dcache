@@ -16,27 +16,26 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package org.dcache.srm.taperecallscheduling;
+package org.dcache.taperecallscheduler;
 
 /**
- * Tape location information on a specific file on tape for bring-online scheduling
+ * Information on a specific tape for bring-online scheduling
  */
-public class TapefileInfo {
+public class TapeInfo {
 
-    private final long filesize; // kB
-    private final String tapename; // kB
+    private final long capacity; // kB
+    private final long usedSpace; // kB
 
-    public TapefileInfo(long filesize, String tapename) {
-        this.filesize = filesize;
-        this.tapename = tapename;
+    public TapeInfo(long capacity, long usedSpace) {
+        this.capacity = capacity;
+        this.usedSpace = usedSpace;
     }
 
-    public long getFilesize() {
-        return filesize;
+    public long getCapacity() {
+        return capacity;
     }
 
-    public String getTapename() {
-        return tapename;
+    public long getUsedSpace() {
+        return usedSpace;
     }
-
 }

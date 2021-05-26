@@ -16,12 +16,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package org.dcache.srm.taperecallscheduling;
+package org.dcache.taperecallscheduler;
 
 /**
  * Bring online job scheduling item for tracking a job's meta-information relevant for job scheduling
  */
-public class SchedulingItemJob {
+public class BringOnlineJob {
     private static final long NO_VALUE = -1;
 
     private final long jobid;
@@ -29,7 +29,7 @@ public class SchedulingItemJob {
     private final long creationTime;
     private long fileSize = NO_VALUE;
 
-    public SchedulingItemJob(long jobid, String fileid, long ctime) {
+    public BringOnlineJob(long jobid, String fileid, long ctime) {
         this.jobid = jobid;
         this.fileid = fileid;
         this.creationTime = ctime;
@@ -53,6 +53,10 @@ public class SchedulingItemJob {
 
     public void setFileSize(long fileSize) {
         this.fileSize = fileSize <= 0 ? NO_VALUE : fileSize;
+    }
+
+    public String toString() {
+        return "jid: " + jobid + ", fid: " + fileid + ", ctime: " + creationTime;
     }
 
 }
