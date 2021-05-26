@@ -1,0 +1,2 @@
+org.dcache.trs.tapeinfoprovider.CsvFileTapeInfoProviderProvider
+org.dcache.trs.tapeinfoprovider.JsonFileTapeInfoProviderProvider

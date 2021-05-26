@@ -1,6 +1,5 @@
 package org.dcache.pinmanager;
 
-
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.MINUTES;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -17,6 +16,7 @@ import diskCacheV111.util.PnfsId;
 import diskCacheV111.vehicles.Pool;
 import diskCacheV111.vehicles.PoolMgrSelectReadPoolMsg;
 import diskCacheV111.vehicles.PoolSetStickyMessage;
+import diskCacheV111.vehicles.ProtocolInfo;
 import dmg.cells.nucleus.CellAddressCore;
 import dmg.cells.nucleus.CellMessageReceiver;
 import dmg.cells.nucleus.CellPath;
@@ -40,6 +40,8 @@ import org.dcache.poolmanager.PoolManagerStub;
 import org.dcache.poolmanager.PoolMonitor;
 import org.dcache.poolmanager.PoolSelector;
 import org.dcache.poolmanager.SelectedPool;
+import org.dcache.trs.TrsScheduleRequestMessage;
+import org.dcache.vehicles.FileAttributes;
 import org.dcache.vehicles.PnfsGetFileAttributes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,11 +64,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>
  * Database operations are blocking. Communication with PoolManager and pools is asynchronous.
  */
-public class PinRequestProcessor
-      implements CellMessageReceiver {
+public class PinRequestProcessor implements CellMessageReceiver {
 
-    private static final Logger LOGGER =
-          LoggerFactory.getLogger(PinRequestProcessor.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(PinRequestProcessor.class);
 
     /**
      * The delay we use after a pin request failed and before retrying the request.
@@ -89,11 +89,11 @@ public class PinRequestProcessor
     private PinDao _dao;
     private CellStub _poolStub;
     private CellStub _pnfsStub;
+    private CellStub _trsStub;
     private PoolManagerStub _poolManagerStub;
     private CheckStagePermission _checkStagePermission;
     private long _maxLifetime;
     private TimeUnit _maxLifetimeUnit;
-
     private PoolMonitor _poolMonitor;
 
     @Required
@@ -124,6 +124,11 @@ public class PinRequestProcessor
     @Required
     public void setPoolManagerStub(PoolManagerStub stub) {
         _poolManagerStub = stub;
+    }
+
+    @Required
+    public void setTrsStub(CellStub stub) {
+        _trsStub = stub;
     }
 
     @Required
@@ -166,16 +171,22 @@ public class PinRequestProcessor
         }
     }
 
-    public MessageReply<PinManagerPinMessage>
-    messageArrived(PinManagerPinMessage message)
+    public MessageReply<PinManagerPinMessage> messageArrived(PinManagerPinMessage message)
           throws CacheException {
-        MessageReply<PinManagerPinMessage> reply =
-              new MessageReply<>();
+        LOGGER.warn("Received PinManagerPinMessage for pnfsid {}", message.getPnfsId());
 
+        if (message instanceof PinManagerDescheduleMessage) {
+            LOGGER.warn("Received PinManagerDescheduleMessage message (id: {}) for pnfsid {}",
+                  message.getRequestId(), message.getPnfsId());
+        }
+
+        MessageReply<PinManagerPinMessage> reply = new MessageReply<>();
         enforceLifetimeLimit(message);
 
         PinTask task = createTask(message, reply);
+
         if (task != null) {
+            LOGGER.warn("created task is not null");
             if (!task.getFileAttributes()
                   .isDefined(PoolMgrSelectReadPoolMsg.getRequiredAttributes())) {
                 rereadNameSpaceEntry(task);
@@ -187,11 +198,16 @@ public class PinRequestProcessor
             }
         }
 
+        if (task == null) {
+            LOGGER.warn("task already existed! kept pin from before");
+        }
+
+        LOGGER.warn("Returning from messageArrived(PinManagerPinMessage message): pnfsid {}",
+              message.getPnfsId());
         return reply;
     }
 
-    protected EnumSet<RequestContainerV5.RequestState>
-    checkStaging(PinTask task) {
+    protected EnumSet<RequestContainerV5.RequestState> checkStaging(PinTask task) {
         if (task.isStagingDenied()) {
             return RequestContainerV5.allStatesExceptStage;
         }
@@ -303,22 +319,93 @@ public class PinRequestProcessor
 
     private void selectReadPool(final PinTask task)
           throws CacheException {
+        LOGGER.warn("selectReadPool(...)");
+
         try {
-            PoolSelector poolSelector =
-                  _poolMonitor.getPoolSelector(task.getFileAttributes(),
-                        task.getProtocolInfo(),
-                        null,
-                        Collections.EMPTY_SET);
+            PoolSelector poolSelector = _poolMonitor.getPoolSelector(task.getFileAttributes(),
+                  task.getProtocolInfo(),
+                  null,
+                  Collections.EMPTY_SET);
 
             SelectedPool pool = poolSelector.selectPinPool();
             setPool(task, pool.name());
             setStickyFlag(task, pool.name(), pool.address());
         } catch (FileNotOnlineCacheException e) {
-            askPoolManager(task);
+            // TODO:lm this is where the bring online requests go!
+            LOGGER.warn("FileNotOnlineCacheException: need to stage file");
+
+            if (!task.isStagingDenied() && task.isSchedulingAllowed()) {
+                LOGGER.warn("scheduling allowed -> send to TRS");
+                refreshTimeout(task, getExpirationTimeForTrsScheduling());
+                sendRequestToBeScheduled(task);
+            } else {
+                LOGGER.warn("scheduling not allowed -> asking poolman for pool");
+                askPoolManager(task);
+            }
         }
     }
 
+//    private void sendRequestToBeScheduled(PinTask task) {
+//        LOGGER.warn("Sending tape recall request to TRS to be scheduled!");
+//
+//        FileAttributes fileAttr = task.getFileAttributes();
+//        ProtocolInfo protocolInfo = task.getProtocolInfo();
+//        String requestId = task.getRequestId();
+//        long lifetime = task.getLifetime();
+//
+//        TRSScheduleRequestMessage msg = new TRSScheduleRequestMessage(fileAttr, protocolInfo,
+//              requestId, lifetime);
+//        msg.setSubject(task.getSubject());
+//
+//        _trsStub.send(msg);
+//        LOGGER.warn("PinMan sent a request to the TRS (id: {}, pnfsid: {})", requestId,
+//              fileAttr.getPnfsId());
+//    }
+
+    private void sendRequestToBeScheduled(PinTask task) {
+        LOGGER.warn("Sending tape recall request to TRS to be scheduled!");
+
+        FileAttributes fileAttr = task.getFileAttributes();
+        ProtocolInfo protocolInfo = task.getProtocolInfo();
+        String requestId = task.getRequestId();
+        long lifetime = task.getLifetime();
+
+        TrsScheduleRequestMessage msg = new TrsScheduleRequestMessage(fileAttr, protocolInfo,
+              requestId, lifetime);
+        msg.setSubject(task.getSubject());
+
+//        _trsStub.send(msg);
+//        LOGGER.warn("PinMan sent a request to the TRS (id: {}, pnfsid: {})", requestId,
+//              fileAttr.getPnfsId());
+
+        CellStub.addCallback(_trsStub.send(msg),
+              new AbstractMessageCallback<TrsScheduleRequestMessage>() {
+                  @Override
+                  public void success(TrsScheduleRequestMessage msg) {
+                      LOGGER.warn("Success getting request back from TRS!");
+                      askPoolManager(task);
+                  }
+
+                  @Override
+                  public void failure(int rc, Object error) {
+                      LOGGER.warn("Failure getting request back from TRS!");
+                      fail(task, rc, error.toString());
+                  }
+
+                  @Override
+                  public void noroute(CellPath path) {
+                      retry(task, RETRY_DELAY, "no route to trs");
+                  }
+
+                  @Override
+                  public void timeout(String error) {
+                      fail(task, CacheException.TIMEOUT, error);
+                  }
+              }, _executor);
+    }
+
     private void askPoolManager(final PinTask task) {
+        LOGGER.error("Asking PoolManager");
         PoolMgrSelectReadPoolMsg msg =
               new PoolMgrSelectReadPoolMsg(task.getFileAttributes(),
                     task.getProtocolInfo(),
@@ -326,9 +413,11 @@ public class PinRequestProcessor
                     checkStaging(task));
         msg.setSubject(task.getSubject());
         CellStub.addCallback(_poolManagerStub.sendAsync(msg),
-              new AbstractMessageCallback<PoolMgrSelectReadPoolMsg>() {
+              new AbstractMessageCallback<>() {
                   @Override
                   public void success(PoolMgrSelectReadPoolMsg msg) {
+                      LOGGER.warn("PoolMgrSelectReadPoolMsg success! found pool: {}",
+                            msg.getPool());
                       try {
                           /* Pool manager expects us
                            * to keep some state
@@ -424,10 +513,13 @@ public class PinRequestProcessor
                     true,
                     task.getSticky(),
                     poolExpiration);
+
+        LOGGER.warn("Sending PoolSetStickyMessage to pool");
         CellStub.addCallback(_poolStub.send(new CellPath(poolAddress), msg),
               new AbstractMessageCallback<PoolSetStickyMessage>() {
                   @Override
                   public void success(PoolSetStickyMessage msg) {
+                      LOGGER.warn("Success setting sticky flag on pool! Setting pin to PINNED");
                       try {
                           setToPinned(task);
                           task.success();
@@ -502,6 +594,12 @@ public class PinRequestProcessor
         return new Date(now + 2 * timeout);
     }
 
+    private Date getExpirationTimeForTrsScheduling() {
+        long now = System.currentTimeMillis();
+        long timeout = TimeUnit.HOURS.toMillis(2);
+        return new Date(now + timeout);
+    }
+
     @Transactional(isolation = REPEATABLE_READ)
     protected PinTask createTask(PinManagerPinMessage message,
           MessageReply<PinManagerPinMessage> reply) {
@@ -510,6 +608,8 @@ public class PinRequestProcessor
         if (message.getRequestId() != null) {
             Pin pin = _dao.get(_dao.where().pnfsId(pnfsId).requestId(message.getRequestId()));
             if (pin != null) {
+                LOGGER.warn("Pin resubmission! pin already exists in state {}", pin.getState());
+
                 /* In this case the request is a resubmission. If the
                  * previous pin completed then use it. Otherwise abort the
                  * previous pin and create a new one.
@@ -520,6 +620,7 @@ public class PinRequestProcessor
                     return null;
                 }
 
+                LOGGER.warn("Removing non-pinned existing pin, creating new one");
                 _dao.update(pin, _dao.set().state(READY_TO_UNPIN).requestId(null));
             }
         }
@@ -529,10 +630,11 @@ public class PinRequestProcessor
               .state(PINNING)
               .pnfsId(pnfsId)
               .requestId(message.getRequestId())
-              .sticky("PinManager-" + UUID.randomUUID().toString())
+              .sticky("PinManager-" + UUID.randomUUID())
               .expirationTime(getExpirationTimeForPoolSelection()));
 
-        return new PinTask(message, reply, pin);
+        boolean allowScheduling = !(message instanceof PinManagerDescheduleMessage);
+        return new PinTask(message, reply, pin, allowScheduling);
     }
 
     private void updateTask(PinTask task, PinDao.PinUpdate update) throws CacheException {

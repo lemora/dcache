@@ -1,6 +1,6 @@
 /* dCache - http://www.dcache.org/
  *
- * Copyright (C) 2021 Deutsches Elektronen-Synchrotron
+ * Copyright (C) 2021 - 2022 Deutsches Elektronen-Synchrotron
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -16,7 +16,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package org.dcache.srm.taperecallscheduling;
+package org.dcache.trs;
+
+import diskCacheV111.util.PnfsId;
 
 import java.util.OptionalLong;
 
@@ -24,26 +26,38 @@ import java.util.OptionalLong;
  * Bring online job scheduling item for tracking a job's meta-information relevant for job
  * scheduling
  */
-public class SchedulingItemJob {
+public class TrsJob {
 
-    private final long jobid;
-    private final String fileid;
+    private final String jobid;
+    private final String pnfsid;
     private final long creationTime;
     private OptionalLong fileSize = OptionalLong.empty();
     private boolean attemptedToRetrieveTapeLocationInfo = false;
 
-    public SchedulingItemJob(long jobid, String fileid, long ctime) {
+    public TrsJob(String jobid, String pnfsid) {
+        this(jobid, pnfsid, System.currentTimeMillis());
+    }
+
+    public TrsJob(String jobid, String pnfsId, long ctime) {
         this.jobid = jobid;
-        this.fileid = fileid;
+        this.pnfsid = pnfsId;
         this.creationTime = ctime;
     }
 
-    public long getJobid() {
+    public String getJobid() {
         return jobid;
     }
 
-    public String getFileid() {
-        return fileid;
+    public String getIdentifier() {
+        return jobid + ":" + pnfsid;
+    }
+
+    public String getPnfsidString() {
+        return pnfsid;
+    }
+
+    public PnfsId getPnfsid() {
+        return new PnfsId(pnfsid);
     }
 
     public long getCreationTime() {
@@ -64,6 +78,10 @@ public class SchedulingItemJob {
 
     public void setAttemptedToRetrieveTapeLocationInfo() {
         attemptedToRetrieveTapeLocationInfo = true;
+    }
+
+    public String toString() {
+        return "jid: " + jobid + ", pnfsid: " + pnfsid + ", ctime: " + creationTime;
     }
 
 }

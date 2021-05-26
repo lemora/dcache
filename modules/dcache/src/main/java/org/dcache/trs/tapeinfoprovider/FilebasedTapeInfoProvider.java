@@ -1,6 +1,6 @@
 /* dCache - http://www.dcache.org/
  *
- * Copyright (C) 2021 Deutsches Elektronen-Synchrotron
+ * Copyright (C) 2021 - 2022 Deutsches Elektronen-Synchrotron
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -16,7 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package org.dcache.srm.taperecallscheduling.tapeinfoprovider;
+package org.dcache.trs.tapeinfoprovider;
 
 import java.io.File;
 import java.util.HashMap;
@@ -24,9 +24,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
-import org.dcache.srm.taperecallscheduling.TapeInfo;
-import org.dcache.srm.taperecallscheduling.TapefileInfo;
-import org.dcache.srm.taperecallscheduling.spi.TapeInfoProvider;
+import org.dcache.trs.FileInfo;
+import org.dcache.trs.TapeInfo;
+import org.dcache.trs.spi.TapeInfoProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,7 +40,7 @@ public abstract class FilebasedTapeInfoProvider implements TapeInfoProvider {
     private String tapeinfoDir;
 
     private HashMap<String, TapeInfo> tapeInfo = new HashMap<>();
-    private HashMap<String, TapefileInfo> tapeFileInfo = new HashMap<>();
+    private HashMap<String, FileInfo> tapeFileInfo = new HashMap<>();
 
     public void setTapeInfoDir(String tapeinfoDir) {
         this.tapeinfoDir = tapeinfoDir.trim().endsWith("/") ? tapeinfoDir : tapeinfoDir + "/";
@@ -54,7 +54,7 @@ public abstract class FilebasedTapeInfoProvider implements TapeInfoProvider {
         tapeInfo = info;
     }
 
-    protected void setTapefileInfo(HashMap<String, TapefileInfo> info) {
+    protected void setTapefileInfo(HashMap<String, FileInfo> info) {
         tapeFileInfo = info;
     }
 
@@ -69,7 +69,7 @@ public abstract class FilebasedTapeInfoProvider implements TapeInfoProvider {
     }
 
     @Override
-    public synchronized Map<String, TapefileInfo> getTapefileInfos(List<String> fileids) {
+    public synchronized Map<String, FileInfo> getTapefileInfos(List<String> fileids) {
         if (tapeFileInfo.isEmpty()) {
             initializeTapefileInfo();
         }

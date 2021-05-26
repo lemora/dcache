@@ -1,6 +1,6 @@
 /* dCache - http://www.dcache.org/
  *
- * Copyright (C) 2021 Deutsches Elektronen-Synchrotron
+ * Copyright (C) 2021 - 2022 Deutsches Elektronen-Synchrotron
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -16,15 +16,15 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package org.dcache.srm.taperecallscheduling.tapeinfoprovider;
+package org.dcache.trs.tapeinfoprovider;
 
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.util.HashMap;
 import java.util.Optional;
 import java.util.Scanner;
-import org.dcache.srm.taperecallscheduling.TapeInfo;
-import org.dcache.srm.taperecallscheduling.TapefileInfo;
+import org.dcache.trs.FileInfo;
+import org.dcache.trs.TapeInfo;
 
 public class CsvFileTapeInfoProvider extends FilebasedTapeInfoProvider {
 
@@ -80,7 +80,7 @@ public class CsvFileTapeInfoProvider extends FilebasedTapeInfoProvider {
         }
         File file = ofile.get();
 
-        HashMap<String, TapefileInfo> parsed = new HashMap<>();
+        HashMap<String, FileInfo> parsed = new HashMap<>();
 
         String fileid; // the srm file url
         long filesize; // KB
@@ -100,7 +100,7 @@ public class CsvFileTapeInfoProvider extends FilebasedTapeInfoProvider {
                 filesize = Long.parseLong(lineParts[1].replaceAll("\\.", ""));
                 tapename = lineParts[2];
 
-                parsed.put(fileid, new TapefileInfo(filesize, tapename));
+                parsed.put(fileid, new FileInfo(filesize, tapename));
             }
 
             setTapefileInfo(parsed);

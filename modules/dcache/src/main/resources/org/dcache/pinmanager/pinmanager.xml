@@ -39,6 +39,13 @@
       <property name="timeoutUnit" value="${pinmanager.service.poolmanager.timeout.unit}"/>
   </bean>
 
+  <bean id="trs-stub" class="org.dcache.cells.CellStub">
+      <description>TRS communication stub</description>
+      <property name="destination" value="${pinmanager.service.trs}"/>
+      <property name="timeout" value="${pinmanager.service.trs.timeout}"/>
+      <property name="timeoutUnit" value="${pinmanager.service.trs.timeout.unit}"/>
+  </bean>
+
   <bean id="pool-stub" class="org.dcache.cells.CellStub">
       <description>Pool communication stub</description>
       <property name="timeout" value="${pinmanager.service.pool.timeout}"/>
@@ -81,6 +88,7 @@
       </property>
       <property name="poolStub" ref="pool-stub"/>
       <property name="pnfsStub" ref="pnfs-stub"/>
+      <property name="trsStub" ref="trs-stub"/>
       <property name="dao" ref="dao"/>
       <property name="scheduledExecutor" ref="scheduled-executor"/>
       <property name="executor">

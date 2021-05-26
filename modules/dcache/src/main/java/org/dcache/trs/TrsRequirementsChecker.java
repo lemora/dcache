@@ -1,6 +1,6 @@
 /* dCache - http://www.dcache.org/
  *
- * Copyright (C) 2021 Deutsches Elektronen-Synchrotron
+ * Copyright (C) 2021 - 2023 Deutsches Elektronen-Synchrotron
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package org.dcache.srm.taperecallscheduling;
+package org.dcache.trs;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.util.concurrent.TimeUnit.HOURS;
@@ -34,11 +34,11 @@ import org.dcache.util.TimeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class TapeRecallSchedulingRequirementsChecker implements CellCommandListener,
+public class TrsRequirementsChecker implements CellCommandListener,
       CellInfoProvider {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(
-          TapeRecallSchedulingRequirementsChecker.class);
+          TrsRequirementsChecker.class);
 
     /**
      * time safety margin in milliseconds
@@ -280,13 +280,13 @@ public class TapeRecallSchedulingRequirementsChecker implements CellCommandListe
         return Long.compare(oldestArrival.getAsLong(), otherArrival.getAsLong());
     }
 
-    public boolean isJobExpired(SchedulingItemJob job) {
+    public boolean isJobExpired(TrsJob job) {
         long age = System.currentTimeMillis() - job.getCreationTime();
         long correctedMaxAge = maxJobWaitingTime() + TIME_SAFETY_MARGIN;
         return age > correctedMaxAge;
     }
 
-    public boolean isTapeinfolessJobExpired(SchedulingItemJob job) {
+    public boolean isTapeinfolessJobExpired(TrsJob job) {
         OptionalLong waitingTime = tapeinfolessJobWaitingTime();
         if (waitingTime.isEmpty()) {
             return isJobExpired(job);
@@ -296,7 +296,7 @@ public class TapeRecallSchedulingRequirementsChecker implements CellCommandListe
         return age > correctedMaxAge;
     }
 
-    @Command(name = "trs set tape selection",
+    @Command(name = "set tape selection",
           hint =
                 "Changes the parameters used for selecting which and how many tapes will be activated "
                       +
@@ -342,7 +342,7 @@ public class TapeRecallSchedulingRequirementsChecker implements CellCommandListe
         }
     }
 
-    @Command(name = "trs set request stay",
+    @Command(name = "set request stay",
           hint = "Changes the time parameters that requests stay in the scheduler before leaving or the associated tape can be selected.")
     public class TrsSetTimeInQueue implements Callable<String> {
 
@@ -387,7 +387,7 @@ public class TapeRecallSchedulingRequirementsChecker implements CellCommandListe
     public void getInfo(PrintWriter pw) {
         configLock.readLock().lock();
         try {
-            pw.printf("Bring online scheduler parameters:\n");
+            pw.printf("Tape recall scheduler parameters:\n");
             pw.printf("    Max. active tapes: %s\n", maxActiveTapes);
             pw.printf("    Min. recall volume percentage for tape selection: %s\n",
                   minTapeRecallPercentage);

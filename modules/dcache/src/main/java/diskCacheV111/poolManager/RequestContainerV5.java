@@ -1001,6 +1001,7 @@ public class RequestContainerV5
                       "Pool manager state not allowed");
                 message.revertDirection();
                 sendMessage(message);
+
                 return;
             }
 

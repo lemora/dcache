@@ -1,6 +1,6 @@
 /* dCache - http://www.dcache.org/
  *
- * Copyright (C) 2021 Deutsches Elektronen-Synchrotron
+ * Copyright (C) 2021 - 2022 Deutsches Elektronen-Synchrotron
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -16,7 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package org.dcache.srm.taperecallscheduling.tapeinfoprovider;
+package org.dcache.trs.tapeinfoprovider;
 
 import com.google.gson.GsonBuilder;
 import java.io.File;
@@ -28,8 +28,8 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
-import org.dcache.srm.taperecallscheduling.TapeInfo;
-import org.dcache.srm.taperecallscheduling.TapefileInfo;
+import org.dcache.trs.FileInfo;
+import org.dcache.trs.TapeInfo;
 
 public class JsonFileTapeInfoProvider extends FilebasedTapeInfoProvider {
 
@@ -85,7 +85,7 @@ public class JsonFileTapeInfoProvider extends FilebasedTapeInfoProvider {
             return;
         }
 
-        HashMap<String, TapefileInfo> result = new HashMap<>();
+        HashMap<String, FileInfo> result = new HashMap<>();
 
         GsonBuilder builder = new GsonBuilder();
         try (Reader reader = Files.newBufferedReader(Paths.get(getTapeinfoDir(), filename))) {
@@ -100,7 +100,7 @@ public class JsonFileTapeInfoProvider extends FilebasedTapeInfoProvider {
                     LOGGER.error("Tapefiles info file line incomplete: '{}'", entry);
                     return;
                 }
-                result.put(entry.getKey(), new TapefileInfo(filesize.longValue(), tapename));
+                result.put(entry.getKey(), new FileInfo(filesize.longValue(), tapename));
             }
 
             setTapefileInfo(result);

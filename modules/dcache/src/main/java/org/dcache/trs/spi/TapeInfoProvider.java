@@ -1,6 +1,6 @@
 /* dCache - http://www.dcache.org/
  *
- * Copyright (C) 2021 Deutsches Elektronen-Synchrotron
+ * Copyright (C) 2021 - 2022 Deutsches Elektronen-Synchrotron
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -15,12 +15,12 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package org.dcache.srm.taperecallscheduling.spi;
+package org.dcache.trs.spi;
 
 import java.util.List;
 import java.util.Map;
-import org.dcache.srm.taperecallscheduling.TapeInfo;
-import org.dcache.srm.taperecallscheduling.TapefileInfo;
+import org.dcache.trs.FileInfo;
+import org.dcache.trs.TapeInfo;
 
 public interface TapeInfoProvider {
 
@@ -38,7 +38,7 @@ public interface TapeInfoProvider {
      * @param fileids list of files requested by identifyer (full srm path)
      * @return tapefile infos
      */
-    Map<String, TapefileInfo> getTapefileInfos(List<String> fileids);
+    Map<String, FileInfo> getTapefileInfos(List<String> fileids);
 
     /**
      * Returns a Strinmg describing the tape info provider, including potentially stored state and

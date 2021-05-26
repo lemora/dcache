@@ -1,0 +1,21 @@
+# Starts the trs (TapeRecallScheduler) cell
+
+check -strong trs.cell.name
+check -strong trs.cell.enable
+check -strong trs.tapeinfoprovider
+check -strong trs.tapeinfo-dir
+check -strong trs.max-active-tapes
+check -strong trs.min-tape-recall-percentage
+check -strong trs.min-request-count-for-tape
+check -strong trs.max-time-in-queue
+check -strong trs.max-time-in-queue.unit
+check -strong trs.min-time-in-queue
+check -strong trs.min-time-in-queue.unit
+check -strong trs.time-in-queue-for-jobs-without-tapeinfo
+check -strong trs.time-in-queue-for-jobs-without-tapeinfo.unit
+
+create org.dcache.cells.UniversalSpringCell "${trs.cell.name}" \
+    "classpath:org/dcache/trs/trs.xml \
+    -consume=${trs.cell.consume} \
+    -subscribe=${trs.cell.subscribe} \
+    "

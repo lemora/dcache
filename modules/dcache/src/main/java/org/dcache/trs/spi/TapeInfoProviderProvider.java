@@ -1,6 +1,6 @@
 /* dCache - http://www.dcache.org/
  *
- * Copyright (C) 2021 Deutsches Elektronen-Synchrotron
+ * Copyright (C) 2021 - 2022 Deutsches Elektronen-Synchrotron
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -15,28 +15,22 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+package org.dcache.trs.spi;
 
-package org.dcache.srm.taperecallscheduling;
+public interface TapeInfoProviderProvider {
 
-/**
- * Tape location information on a specific file on tape for bring-online scheduling
- */
-public class TapefileInfo {
+    /**
+     * The name an admin uses to identify the tape info provider.
+     */
+    String getName();
 
-    private final long filesize; // kB
-    private final String tapename; // kB
+    /**
+     * Sets configuration parameters for the tape info provider.
+     */
+    void setFileDirectory(String directory);
 
-    public TapefileInfo(long filesize, String tapename) {
-        this.filesize = filesize;
-        this.tapename = tapename;
-    }
-
-    public long getFilesize() {
-        return filesize;
-    }
-
-    public String getTapename() {
-        return tapename;
-    }
-
+    /**
+     * Creates a new tape info provider.
+     */
+    TapeInfoProvider createProvider();
 }

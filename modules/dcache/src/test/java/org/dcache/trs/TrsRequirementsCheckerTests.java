@@ -1,6 +1,6 @@
 /* dCache - http://www.dcache.org/
  *
- * Copyright (C) 2021 Deutsches Elektronen-Synchrotron
+ * Copyright (C) 2021 - 2023 Deutsches Elektronen-Synchrotron
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package org.dcache.srm.taperecallscheduling;
+package org.dcache.trs;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.Assert.assertEquals;
@@ -24,25 +24,22 @@ import static org.junit.Assert.assertTrue;
 
 import java.time.Duration;
 import java.util.OptionalLong;
-import org.dcache.srm.request.BringOnlineFileRequest;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.powermock.core.classloader.annotations.PowerMockIgnore;
-import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
 
 @RunWith(PowerMockRunner.class)
-@PrepareForTest({BringOnlineFileRequest.class})
 @PowerMockIgnore({"com.sun.org.apache.xerces.*",
       "javax.xml.*", "org.xml.*", "org.w3c.*", "jdk.xml.*"})
-public class TapeRecallSchedulingRequirementsCheckerTests {
+public class TrsRequirementsCheckerTests {
 
     /**
      * time safety margin in milliseconds
      */
     private static final long TIME_SAFETY_MARGIN = 20;
-    TapeRecallSchedulingRequirementsChecker requirementsChecker;
+    TrsRequirementsChecker requirementsChecker;
 
     private long getNewCtime() {
         return System.currentTimeMillis() - TIME_SAFETY_MARGIN;
@@ -67,7 +64,7 @@ public class TapeRecallSchedulingRequirementsCheckerTests {
 
     @Before
     public void setup() {
-        requirementsChecker = new TapeRecallSchedulingRequirementsChecker();
+        requirementsChecker = new TrsRequirementsChecker();
         requirementsChecker.setMaxActiveTapes(1);
         requirementsChecker.setMinTapeRecallPercentage(80);
         requirementsChecker.setMinNumberOfRequestsForTapeSelection(1);
@@ -132,9 +129,9 @@ public class TapeRecallSchedulingRequirementsCheckerTests {
     public void assessJobExpiry() {
         requirementsChecker.setMaxJobWaitingTime(Duration.ofSeconds(50));
 
-        SchedulingItemJob j1 = new SchedulingItemJob(10, "/tape/file10.txt",
+        TrsJob j1 = new TrsJob("10", "/tape/file10.txt",
               getExpiredCtime());
-        SchedulingItemJob j2 = new SchedulingItemJob(11, "/tape/file11.txt",
+        TrsJob j2 = new TrsJob("11", "/tape/file11.txt",
               getNewCtime());
 
         assertTrue(requirementsChecker.isJobExpired(j1));
@@ -146,9 +143,9 @@ public class TapeRecallSchedulingRequirementsCheckerTests {
         requirementsChecker.setMaxJobWaitingTime(Duration.ofSeconds(50));
         requirementsChecker.setTapeinfolessJobWaitingTime(Duration.ofSeconds(5));
 
-        SchedulingItemJob j1 = new SchedulingItemJob(10, "/tape/file10.txt",
+        TrsJob j1 = new TrsJob("10", "/tape/file10.txt",
               getExpiredTapeinfolessCtime());
-        SchedulingItemJob j2 = new SchedulingItemJob(11, "/tape/file11.txt",
+        TrsJob j2 = new TrsJob("11", "/tape/file11.txt",
               getNewCtime());
 
         assertTrue(requirementsChecker.isTapeinfolessJobExpired(j1));
@@ -160,9 +157,9 @@ public class TapeRecallSchedulingRequirementsCheckerTests {
         requirementsChecker.setTapeinfolessJobWaitingTime(Duration.ofSeconds(-1));
         requirementsChecker.setMaxJobWaitingTime(Duration.ofSeconds(50));
 
-        SchedulingItemJob j1 = new SchedulingItemJob(10, "/tape/file10.txt",
+        TrsJob j1 = new TrsJob("10", "/tape/file10.txt",
               getExpiredCtime());
-        SchedulingItemJob j2 = new SchedulingItemJob(11, "/tape/file11.txt",
+        TrsJob j2 = new TrsJob("11", "/tape/file11.txt",
               getNewCtime());
 
         assertTrue(requirementsChecker.isTapeinfolessJobExpired(j1));

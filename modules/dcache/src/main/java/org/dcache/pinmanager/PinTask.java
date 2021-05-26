@@ -16,6 +16,7 @@ public class PinTask {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PinTask.class);
 
+    private final boolean _allowScheduling;
     private final PinManagerPinMessage _request;
     private final Optional<MessageReply<PinManagerPinMessage>> _reply;
     private Pin _pin;
@@ -23,6 +24,12 @@ public class PinTask {
 
     public PinTask(PinManagerPinMessage request, MessageReply<PinManagerPinMessage> reply,
           Pin pin) {
+        this(request, reply, pin, true);
+    }
+
+    public PinTask(PinManagerPinMessage request, MessageReply<PinManagerPinMessage> reply,
+          Pin pin, boolean allowScheduling) {
+        _allowScheduling = allowScheduling;
         _request = request;
         _reply = request.isReplyWhenStarted() ? Optional.empty() : Optional.of(reply);
         _pin = pin;
@@ -84,6 +91,10 @@ public class PinTask {
         return _request.isStagingDenied();
     }
 
+    public boolean isSchedulingAllowed() {
+        return _allowScheduling;
+    }
+
     public PoolMgrSelectReadPoolMsg.Context getReadPoolSelectionContext() {
         return _readPoolSelectionContext;
     }
@@ -110,6 +121,7 @@ public class PinTask {
     }
 
     public void success() {
+        LOGGER.warn("PinTask success! Setting pin to reply, sending reply");
         _reply.ifPresent(r -> {
             _request.setPin(_pin);
             r.reply(_request);

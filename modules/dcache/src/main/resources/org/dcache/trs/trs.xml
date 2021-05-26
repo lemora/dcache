@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+           http://www.springframework.org/schema/beans/spring-beans.xsd
+           http://www.springframework.org/schema/context
+           http://www.springframework.org/schema/context/spring-context.xsd">
+
+    <context:property-placeholder/>
+    <context:annotation-config/>
+
+    <bean id="noroutetocell" class="org.dcache.cells.LogNoRouteToCellExceptionReceiver">
+        <description>Undeliverable message logger</description>
+    </bean>
+
+    <bean id="scheduled-executor"
+          class="java.util.concurrent.ScheduledThreadPoolExecutor"
+          destroy-method="shutdownNow">
+        <description>Thread pool for scheduled activities</description>
+        <constructor-arg value="1"/>
+    </bean>
+
+    <bean id="PinManager" class="org.dcache.cells.CellStub">
+        <description>Pinmanager endpoint</description>
+        <property name="destination" value="${trs.service.pinmanager}"/>
+        <property name="timeout" value="${trs.service.pinmanager.timeout}"/>
+        <property name="timeoutUnit" value="${trs.service.pinmanager.timeout.unit}"/>
+    </bean>
+
+    <bean id="requirements-checker" class="org.dcache.trs.TrsRequirementsChecker">
+        <description>Holds config parameters for tape recall scheduling and moderates usage</description>
+        <property name="maxActiveTapes" value="${trs.max-active-tapes}"/>
+        <property name="minTapeRecallPercentage" value="${trs.min-tape-recall-percentage}"/>
+        <property name="minNumberOfRequestsForTapeSelection" value="${trs.min-request-count-for-tape}"/>
+        <property name="minJobWaitingTime"
+                  value="#{ T(org.dcache.util.TimeUtils).durationOf('${trs.min-time-in-queue}', '${trs.min-time-in-queue.unit}')}"/>
+        <property name="maxJobWaitingTime"
+                  value="#{ T(org.dcache.util.TimeUtils).durationOf('${trs.max-time-in-queue}', '${trs.max-time-in-queue.unit}')}"/>
+        <property name="tapeinfolessJobWaitingTime"
+                  value="#{ T(org.dcache.util.TimeUtils).durationOf('${trs.time-in-queue-for-jobs-without-tapeinfo}',
+                  '${trs.time-in-queue-for-jobs-without-tapeinfo.unit}')}"/>
+    </bean>
+
+    <bean id="tape-info-provider-provider" class="org.dcache.trs.TapeInfoProviderFactoryBean">
+        <property name="name" value="${trs.tapeinfoprovider}"/>
+        <property name="tapeInfoDir" value="${trs.tapeinfo-dir}"/>
+    </bean>
+
+    <bean id="tape-informant" class="org.dcache.trs.TapeInformant">
+        <description>Responsible for passing on tape location information</description>
+        <property name="tapeInfoProviderProvider" ref="tape-info-provider-provider"/>
+    </bean>
+
+    <bean id="scheduling-strategy" class="org.dcache.trs.SchedulingStrategy">
+        <description>Strategy for scheduling tape recall requests</description>
+        <property name="requirementsChecker" ref="requirements-checker"/>
+        <property name="tapeInformant" ref="tape-informant"/>
+    </bean>
+
+    <bean id="scheduler" class="org.dcache.trs.Scheduler">
+        <description>Scheduler for tape recall requests</description>
+        <property name="pinManagerStub" ref="PinManager"/>
+        <property name="schedulingStrategy" ref="scheduling-strategy"/>
+        <property name="executor" ref="scheduled-executor"/>
+    </bean>
+
+</beans>

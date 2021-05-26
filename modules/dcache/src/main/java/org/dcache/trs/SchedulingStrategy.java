@@ -1,6 +1,6 @@
 /* dCache - http://www.dcache.org/
  *
- * Copyright (C) 2021 Deutsches Elektronen-Synchrotron
+ * Copyright (C) 2021 - 2023 Deutsches Elektronen-Synchrotron
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -16,7 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package org.dcache.srm.scheduler.strategy;
+package org.dcache.trs;
 
 import static java.util.concurrent.TimeUnit.MINUTES;
 
@@ -35,15 +35,6 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import javax.annotation.concurrent.GuardedBy;
-import org.dcache.srm.request.BringOnlineFileRequest;
-import org.dcache.srm.request.Job;
-import org.dcache.srm.scheduler.spi.SchedulingStrategy;
-import org.dcache.srm.taperecallscheduling.SchedulingInfoTape;
-import org.dcache.srm.taperecallscheduling.SchedulingItemJob;
-import org.dcache.srm.taperecallscheduling.TapeInfo;
-import org.dcache.srm.taperecallscheduling.TapeInformant;
-import org.dcache.srm.taperecallscheduling.TapeRecallSchedulingRequirementsChecker;
-import org.dcache.srm.taperecallscheduling.TapefileInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,14 +45,14 @@ import org.slf4j.LoggerFactory;
  * The scheduler is a passive component that receives job IDs to be added to its queue and hands
  * them out in the desired sequence upon request.
  */
-public class TapeRecallSchedulingStrategy implements SchedulingStrategy {
+public class SchedulingStrategy {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(
-          TapeRecallSchedulingStrategy.class);
+          SchedulingStrategy.class);
 
     private static final long MIN_TIME_BETWEEN_TAPEINFO_FETCHING = MINUTES.toMillis(1);
 
-    private TapeRecallSchedulingRequirementsChecker requirementsChecker;
+    private TrsRequirementsChecker requirementsChecker;
     private TapeInformant tapeInformant;
     private long lastTapeInfoRefreshAttempt = 0;
 
@@ -69,12 +60,12 @@ public class TapeRecallSchedulingStrategy implements SchedulingStrategy {
 
     private final HashMap<String, SchedulingInfoTape> tapes = new HashMap<>();
 
-    private final LinkedList<SchedulingItemJob> newJobs = new LinkedList<>();
-    private final HashMap<String, LinkedList<SchedulingItemJob>> tapesWithJobs = new HashMap<>();
-    private final HashMap<String, LinkedList<SchedulingItemJob>> activeTapesWithJobs = new HashMap<>();
-    private final Queue<Long> immediateJobQueue = new ArrayDeque<>();
+    private final LinkedList<TrsJob> newJobs = new LinkedList<>();
+    private final HashMap<String, LinkedList<TrsJob>> tapesWithJobs = new HashMap<>();
+    private final HashMap<String, LinkedList<TrsJob>> activeTapesWithJobs = new HashMap<>();
+    private final Queue<String> immediateJobQueue = new ArrayDeque<>();
 
-    public void setRequirementsChecker(TapeRecallSchedulingRequirementsChecker moderator) {
+    public void setRequirementsChecker(TrsRequirementsChecker moderator) {
         requirementsChecker = moderator;
     }
 
@@ -82,18 +73,25 @@ public class TapeRecallSchedulingStrategy implements SchedulingStrategy {
         tapeInformant = informant;
     }
 
-    @Override
-    public synchronized void add(Job job) {
-        String filename = ((BringOnlineFileRequest) job).getSurl().getRawPath();
-        SchedulingItemJob jobInfo = new SchedulingItemJob(job.getId(), filename,
-              job.getCreationTime());
-        addNewJob(jobInfo);
-        LOGGER.trace("Added bring-online job '{}' for file '{}' to scheduler", job.getId(),
-              filename);
+//    public synchronized void add(Job job) {
+//        String filename = ((BringOnlineFileRequest) job).getSurl().getRawPath();
+//        BringOnlineJob jobInfo =  new BringOnlineJob(job.getId(), filename, job.getCreationTime());
+//        addNewJob(jobInfo);
+//        LOGGER.trace("Added bring-online job '{}' for file '{}' to scheduler", job.getId(), filename);
+//    }
+
+    public synchronized void add(TrsJob job) {
+        addNewJob(job);
+        LOGGER.trace("Added bring-online job '{}' for file '{}' to scheduler", job.getJobid(),
+              job.getPnfsidString());
     }
 
-    @Override
-    public synchronized Long remove() {
+    /**
+     * Returns the id of the next job that should be executed
+     *
+     * @return String id of the next job
+     */
+    public synchronized String remove() {
         attemptToRefreshTapeInfo();
 
         boolean activatedTapes = false;
@@ -113,11 +111,10 @@ public class TapeRecallSchedulingStrategy implements SchedulingStrategy {
 
         LOGGER.info(describeQueueState());
 
-        Long job = immediateJobQueue.poll();
+        String job = immediateJobQueue.poll();
         return job;
     }
 
-    @Override
     public synchronized int size() {
         int newJobsCount;
         int jobsByTapeCount;
@@ -135,7 +132,7 @@ public class TapeRecallSchedulingStrategy implements SchedulingStrategy {
     }
 
     @GuardedBy("this")
-    private boolean addNewJob(SchedulingItemJob job) {
+    private boolean addNewJob(TrsJob job) {
         return newJobs.add(job);
     }
 
@@ -149,7 +146,7 @@ public class TapeRecallSchedulingStrategy implements SchedulingStrategy {
      * @return if the job was added to the tape list
      */
     @GuardedBy("this")
-    private boolean addJobToTapeQueue(SchedulingItemJob job, String tape) {
+    private boolean addJobToTapeQueue(TrsJob job, String tape) {
         if (tape == null || job == null || "".equals(tape)) {
             return false;
         }
@@ -175,7 +172,7 @@ public class TapeRecallSchedulingStrategy implements SchedulingStrategy {
             if (Strings.isNullOrEmpty(tape)) {
                 break;
             }
-            LinkedList<SchedulingItemJob> jobs = tapesWithJobs.remove(tape);
+            LinkedList<TrsJob> jobs = tapesWithJobs.remove(tape);
             tapes.get(tape).resetJobArrivalTimes();
             String actionTaken;
             if (activeTapesWithJobs.containsKey(tape) && activeTapesWithJobs.get(tape) != null) {
@@ -255,7 +252,7 @@ public class TapeRecallSchedulingStrategy implements SchedulingStrategy {
         Map<String, Long> tapesWithRecallVolume = eligibleTapes.stream()
               .collect(Collectors.toMap(Function.identity(),
                     t -> tapesWithJobs.get(t).stream()
-                          .map(SchedulingItemJob::getFileSize)
+                          .map(TrsJob::getFileSize)
                           .filter(OptionalLong::isPresent)
                           .mapToLong(OptionalLong::getAsLong)
                           .sum()));
@@ -304,9 +301,9 @@ public class TapeRecallSchedulingStrategy implements SchedulingStrategy {
             return;
         }
 
-        List<SchedulingItemJob> jobsToMove = new LinkedList<>();
+        List<TrsJob> jobsToMove = new LinkedList<>();
 
-        Iterator<Map.Entry<String, LinkedList<SchedulingItemJob>>> itr = activeTapesWithJobs.entrySet()
+        Iterator<Map.Entry<String, LinkedList<TrsJob>>> itr = activeTapesWithJobs.entrySet()
               .iterator();
 
         while (itr.hasNext()) {
@@ -315,7 +312,7 @@ public class TapeRecallSchedulingStrategy implements SchedulingStrategy {
             var jobs = currentTape.getValue();
 
             if (!jobs.isEmpty()) { // jobs left for tape
-                SchedulingItemJob job = jobs.remove();
+                TrsJob job = jobs.remove();
                 jobsToMove.add(job);
             }
 
@@ -334,8 +331,8 @@ public class TapeRecallSchedulingStrategy implements SchedulingStrategy {
         }
 
         jobsToMove.sort(Comparator.comparingLong(
-              SchedulingItemJob::getCreationTime)); // sorting by ctime to have predictable ordering
-        jobsToMove.forEach(j -> immediateJobQueue.add(j.getJobid()));
+              TrsJob::getCreationTime)); // sorting by ctime to have predictable ordering
+        jobsToMove.forEach(j -> immediateJobQueue.add(j.getIdentifier()));
     }
 
     /**
@@ -344,15 +341,15 @@ public class TapeRecallSchedulingStrategy implements SchedulingStrategy {
      */
     @GuardedBy("this")
     private void moveExpiredJobsToImmediateJobQueue() {
-        List<Long> expiredJobs = new LinkedList<>();
-        Iterator<SchedulingItemJob> iterator = newJobs.iterator();
-        SchedulingItemJob job;
+        List<String> expiredJobs = new LinkedList<>();
+        Iterator<TrsJob> iterator = newJobs.iterator();
+        TrsJob job;
 
         while (iterator.hasNext()) {
             job = iterator.next();
             if (job.attemptedToRetrieveTapeLocationInfo()
                   && requirementsChecker.isTapeinfolessJobExpired(job)) {
-                expiredJobs.add(job.getJobid());
+                expiredJobs.add(job.getIdentifier());
                 iterator.remove();
             }
         }
@@ -400,31 +397,27 @@ public class TapeRecallSchedulingStrategy implements SchedulingStrategy {
         }
         Set<String> changedTapeQueues = new HashSet();
 
-        List<String> fileids = newJobs.stream()
+        List<String> pnfsids = newJobs.stream()
               .map(i -> {
                   i.setAttemptedToRetrieveTapeLocationInfo();
-                  return i.getFileid();
+                  return i.getPnfsidString();
               })
               .collect(Collectors.toList());
 
-        Map<String, TapefileInfo> newTapeFileInfos = tapeInformant.getTapefileInfos(fileids);
-        LOGGER.info("Retrieved tape info on {}/{} files", newTapeFileInfos.size(), fileids.size());
+        Map<String, FileInfo> newTapeFileInfos = tapeInformant.getTapefileInfos(pnfsids);
+        LOGGER.info("Retrieved tape info on {}/{} files", newTapeFileInfos.size(), pnfsids.size());
 
-        if (newTapeFileInfos.isEmpty()) {
-            return;
-        }
-
-        Iterator<SchedulingItemJob> iterator = newJobs.iterator();
-        SchedulingItemJob job;
-        String fileid;
-        TapefileInfo tapeFileInfo;
+        Iterator<TrsJob> iterator = newJobs.iterator();
+        TrsJob job;
+        String pnfsid;
+        FileInfo tapeFileInfo;
 
         while (iterator.hasNext()) {
             job = iterator.next();
-            fileid = job.getFileid();
+            pnfsid = job.getPnfsidString();
 
-            if (newTapeFileInfos.containsKey(fileid)) {
-                tapeFileInfo = newTapeFileInfos.get(fileid);
+            if (newTapeFileInfos.containsKey(pnfsid)) {
+                tapeFileInfo = newTapeFileInfos.get(pnfsid);
                 job.setFileSize(tapeFileInfo.getFilesize());
 
                 if (addJobToTapeQueue(job, tapeFileInfo.getTapename())) {
@@ -434,8 +427,6 @@ public class TapeRecallSchedulingStrategy implements SchedulingStrategy {
             }
         }
         sortTapeRequestQueues(changedTapeQueues);
-
-        logTapesWithJobsState();
     }
 
     /**
@@ -461,8 +452,8 @@ public class TapeRecallSchedulingStrategy implements SchedulingStrategy {
         if (!tapesWithJobs.containsKey(tapeName)) {
             return;
         }
-        List<SchedulingItemJob> tapeJobs = tapesWithJobs.get(tapeName);
-        tapeJobs.sort(Comparator.comparingLong(SchedulingItemJob::getCreationTime));
+        List<TrsJob> tapeJobs = tapesWithJobs.get(tapeName);
+        tapeJobs.sort(Comparator.comparingLong(TrsJob::getCreationTime));
 
         SchedulingInfoTape tape = tapes.get(tapeName);
         tape.resetJobArrivalTimes();
@@ -515,7 +506,7 @@ public class TapeRecallSchedulingStrategy implements SchedulingStrategy {
     }
 
     @GuardedBy("this")
-    private String describeTapesWithJobsMap(Map<String, LinkedList<SchedulingItemJob>> tapesJobMap) {
+    public String describeTapesWithJobsMap(Map<String, LinkedList<TrsJob>> tapesJobMap) {
         StringBuilder sb = new StringBuilder();
         if (tapesJobMap.isEmpty()) {
             return sb.append(" []").toString();
@@ -523,6 +514,15 @@ public class TapeRecallSchedulingStrategy implements SchedulingStrategy {
         tapesJobMap.entrySet().stream().forEach(
               e -> sb.append("(").append(e.getKey()).append(", ").append(e.getValue().size())
                     .append(") "));
+        return sb.toString();
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(describeQueueState()).append("\n");
+        sb.append("Pending tapes: ").append(describeTapesWithJobsMap(tapesWithJobs)).append("\n");
+        sb.append("Active tapes: ").append(describeTapesWithJobsMap(activeTapesWithJobs));
         return sb.toString();
     }
 
