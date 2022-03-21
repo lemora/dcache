@@ -8,11 +8,16 @@ import diskCacheV111.poolManager.PoolSelectionUnit;
 import diskCacheV111.util.CacheException;
 import diskCacheV111.vehicles.PoolSetStickyMessage;
 import dmg.cells.nucleus.CellPath;
+import java.time.Duration;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 import javax.jdo.JDOException;
 import org.dcache.cells.AbstractMessageCallback;
 import org.dcache.cells.CellStub;
@@ -48,17 +53,23 @@ public class UnpinProcessor implements Runnable {
     private final AtomicInteger _count = new AtomicInteger();
     private final int _maxUnpinsPerRun;
 
+    private final ConcurrentHashMap<String, Long> _poolsBlackList = new ConcurrentHashMap<>();
+    private Duration _maxBlacklistDuration;
+
 
     public UnpinProcessor(PinDao dao, CellStub poolStub, PoolMonitor poolMonitor,
-          int maxUnpinsPerRun) {
+          int maxUnpinsPerRun, Duration maxBlacklistDuration) {
         _dao = dao;
         _poolStub = poolStub;
         _poolMonitor = poolMonitor;
         _maxUnpinsPerRun = maxUnpinsPerRun;
+        _maxBlacklistDuration = maxBlacklistDuration;
     }
 
     @Override
     public void run() {
+        updateBlacklistedPools();
+
         final ExecutorService executor = new CDCExecutorServiceDecorator(
               Executors.newSingleThreadExecutor());
         NDC.push("BackgroundUnpinner-" + _count.incrementAndGet());
@@ -78,6 +89,24 @@ public class UnpinProcessor implements Runnable {
         } finally {
             executor.shutdown();
             NDC.pop();
+        }
+    }
+
+    private void updateBlacklistedPools() {
+        if (!_poolsBlackList.isEmpty()) {
+            LOGGER.debug("{} pools are currently blacklisted: [{}]", _poolsBlackList.size(),
+                  _poolsBlackList.entrySet().stream().map(Entry::getKey).collect(
+                        Collectors.joining(",")));
+            for (Map.Entry<String, Long> blackListEntry : _poolsBlackList.entrySet()) {
+                String poolName = blackListEntry.getKey();
+                long durationBlacklisted = blackListEntry.getValue();
+                // check if it is time to remove pool from the blacklist
+                if (durationBlacklisted != 0 && ((System.currentTimeMillis() - durationBlacklisted)
+                      > _maxBlacklistDuration.toMillis())) {
+                    _poolsBlackList.remove(poolName);
+                    LOGGER.warn("Removed pool {} from the unpinning blacklist", poolName);
+                }
+            }
         }
     }
 
@@ -111,19 +140,31 @@ public class UnpinProcessor implements Runnable {
 
     private void clearStickyFlag(final Semaphore idle, final Pin pin, Executor executor)
           throws InterruptedException {
+        String poolname = pin.getPool();
+        if (poolname != null && _poolsBlackList.containsKey(poolname)) {
+            LOGGER.debug("Cannot unpin {} because pool {} is blacklisted", pin.getPinId(),
+                  poolname);
+            failedToUnpin(pin);
+            return;
+        }
         PoolSelectionUnit.SelectionPool pool = _poolMonitor.getPoolSelectionUnit()
-              .getPool(pin.getPool());
-        if (pool == null || !pool.isActive()) {
+              .getPool(poolname);
+        if (pool == null) {
+            LOGGER.debug(
+                  "Unable to clear sticky flag for pin {} on pnfsid {} because pool is null.",
+                  pin.getPinId(), pin.getPnfsId());
+        } else if (!pool.isActive()) {
             LOGGER.warn(
-                  "Unable to clear sticky flag for pin {} on pnfsid {} because pool {} is unavailable",
-                  pin.getPinId(), pin.getPnfsId(), pin.getPool());
+                  "Unable to clear sticky flag for pin {} on pnfsid {} because pool {} is unavailable. Blacklisting pool.",
+                  pin.getPinId(), pin.getPnfsId(), poolname);
+            _poolsBlackList.put(poolname, System.currentTimeMillis());
             failedToUnpin(pin);
             return;
         }
 
         idle.acquire();
         PoolSetStickyMessage msg =
-              new PoolSetStickyMessage(pin.getPool(),
+              new PoolSetStickyMessage(poolname,
                     pin.getPnfsId(),
                     false,
                     pin.getSticky(),

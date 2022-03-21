@@ -57,6 +57,9 @@
       <property name="resetFailedUnpinsPeriod"
                 value="#{ T(org.dcache.util.TimeUtils).durationOf('${pinmanager.reset-failed-unpins-period}',
                 '${pinmanager.reset-failed-unpins-period.unit}')}"/>
+    <property name="maxPoolBlacklistDuration"
+                value="#{ T(org.dcache.util.TimeUtils).durationOf('${pinmanager.unavailable-pool-blacklist-period}',
+                '${pinmanager.unavailable-pool-blacklist-period.unit}')}"/>
       <property name="poolStub" ref="pool-stub"/>
       <property name="dao" ref="dao"/>
       <property name="executor" ref="scheduled-executor"/>
@@ -101,11 +104,10 @@
       <property name="authorizationPolicy" ref="pdp"/>
   </bean>
 
-
-    <bean id="query-pin-processor" class="org.dcache.pinmanager.QueryRequestProcessor">
-        <description>Processes unpin requests</description>
-        <property name="dao" ref="dao"/>
-    </bean>
+  <bean id="query-pin-processor" class="org.dcache.pinmanager.QueryRequestProcessor">
+      <description>Processes unpin requests</description>
+      <property name="dao" ref="dao"/>
+  </bean>
 
   <bean id="list-pin-processor" class="org.dcache.pinmanager.ListRequestProcessor">
       <description>Processes pin list requests</description>

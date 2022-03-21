@@ -47,6 +47,15 @@ public class PinManager implements CellMessageReceiver, LeaderLatchListener, Cel
     // Period in which to reset all pins that failed to be unpinned from state FAILED_TO_UNPIN to READY_TO_UNPIN
     private Duration resetFailedUnpinsPeriod;
     private int maxUnpinsPerRun = -1;
+    private Duration _maxPoolBlacklistDuration;
+
+    @Required
+
+    public void setMaxPoolBlacklistDuration(Duration duration) {
+        checkArgument(!duration.isNegative(),
+              "The pool blacklist duration needs to be positive or 0.");
+        _maxPoolBlacklistDuration = duration;
+    }
 
     @Required
     public void setExecutor(ScheduledExecutorService executor) {
@@ -175,7 +184,8 @@ public class PinManager implements CellMessageReceiver, LeaderLatchListener, Cel
 
     public void init() {
         // Needs to be assigned after dao has been initialized
-        unpinTask = new UnpinProcessor(dao, poolStub, poolMonitor, maxUnpinsPerRun);
+        unpinTask = new UnpinProcessor(dao, poolStub, poolMonitor, maxUnpinsPerRun,
+              _maxPoolBlacklistDuration);
     }
 
     @Override
