@@ -110,7 +110,7 @@ public class HsmCleaner extends AbstractCleaner implements CellMessageReceiver, 
     private Consumer<URI> _successSink;
 
     /**
-     * Maximum number of cached locations to delete.
+     * Maximum number of cached delete locations.
      */
     private int _maxCachedDeleteLocations = 12000;
 
@@ -131,7 +131,7 @@ public class HsmCleaner extends AbstractCleaner implements CellMessageReceiver, 
     private final Timer _timer = new Timer("Request tracker timeout");
 
     /**
-     * Set maximum number of cached locations to delete.
+     * Set maximum number of cached delete locations.
      */
     public synchronized void setMaxCachedDeleteLocations(int value) {
         _maxCachedDeleteLocations = value;
@@ -268,9 +268,8 @@ public class HsmCleaner extends AbstractCleaner implements CellMessageReceiver, 
             _requestTimeoutPerHsm.put(hsm, timeout);
         } else {
             /* If there is no available pool, then we report failure on
-             * all files.
-             */
-            LOGGER.warn("No pools attached to {} are available", hsm);
+             * all files. */
+            LOGGER.warn("No pools attached to HSM {} are available", hsm);
 
             Iterator<URI> i = _locationsToDelete.get(hsm).iterator();
             while (i.hasNext()) {
@@ -314,6 +313,9 @@ public class HsmCleaner extends AbstractCleaner implements CellMessageReceiver, 
         Collection<URI> locations = _locationsToDelete.get(hsm);
         Collection<URI> success = msg.getSucceeded();
         Collection<URI> failures = msg.getFailed();
+
+        LOGGER.info("Pool delete responses for HSM {}: {} success, {} failures", hsm,
+              success.size(), failures.size());
 
         if (locations == null) {
             /* Seems we got a reply for something this instance did
@@ -476,7 +478,7 @@ public class HsmCleaner extends AbstractCleaner implements CellMessageReceiver, 
           hint = "Changes the maximum number of cached hsm delete locations.")
     public class HsmSetMaxCachedDeleteLocationsCommand implements Callable<String> {
 
-        @Argument(usage = "maximal number of cached hsm delete locations")
+        @Argument(usage = "maximal number of cached HSM delete locations")
         int maxCachedDeleteLocations;
 
         @Override
@@ -487,7 +489,7 @@ public class HsmCleaner extends AbstractCleaner implements CellMessageReceiver, 
             }
 
             _maxCachedDeleteLocations = maxCachedDeleteLocations;
-            return "Maximal number of cached hsm delete locations set to "
+            return "Maximal number of cached HSM delete locations set to "
                   + _maxCachedDeleteLocations;
         }
     }

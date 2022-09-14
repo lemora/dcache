@@ -5,7 +5,6 @@ import static com.google.common.util.concurrent.Futures.allAsList;
 import static com.google.common.util.concurrent.Futures.immediateFailedFuture;
 import static dmg.util.CommandException.checkCommand;
 import static java.util.concurrent.TimeUnit.SECONDS;
-import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 import static org.dcache.cells.HAServiceLeadershipManager.HA_NOT_LEADER_MSG;
 
@@ -104,13 +103,10 @@ public class DiskCleaner extends AbstractCleaner implements CellCommandListener,
         try {
             LOGGER.info("*********NEW_RUN*************");
 
-            LOGGER.debug("INFO: Refresh Interval : {} {}", _refreshInterval, _refreshIntervalUnit);
-            LOGGER.debug("INFO: Number of files processed at once: {}", _processAtOnce);
-
             // get list of pool names from the trash_table
             List<String> poolList = getPoolList();
 
-            LOGGER.debug("List of Pools from the trash-table : {}", poolList);
+            LOGGER.debug("List of pools from the trash-table : {}", poolList);
 
             // if there are some pools in the blackPoolList (i.e.,
             // pools that are down/do not exist), extract them from the
@@ -249,18 +245,17 @@ public class DiskCleaner extends AbstractCleaner implements CellCommandListener,
      */
     private int sendRemoveToPoolCleaner(String poolName, List<String> removeList)
           throws InterruptedException, CacheException, NoRouteToCellException {
-        LOGGER.trace("sendRemoveToPoolCleaner: poolName={} removeList={}", poolName, removeList);
+        LOGGER.trace("sending {} remove targets to pool {}", removeList.size(), poolName);
 
         try {
-            PoolRemoveFilesMessage msg =
-                  CellStub.get(_poolStub.send(new CellPath(poolName),
-                        new PoolRemoveFilesMessage(poolName, removeList)));
+            PoolRemoveFilesMessage msg = CellStub.get(_poolStub.send(new CellPath(poolName),
+                  new PoolRemoveFilesMessage(poolName, removeList)));
             if (msg.getReturnCode() == 0) {
                 removeFiles(poolName, List.copyOf(removeList));
                 return removeList.size();
             } else if (msg.getReturnCode() == 1 && msg.getErrorObject() instanceof String[]) {
-                Set<String> notRemoved =
-                      new HashSet<>(Arrays.asList((String[]) msg.getErrorObject()));
+                Set<String> notRemoved = new HashSet<>(
+                      Arrays.asList((String[]) msg.getErrorObject()));
                 List<String> removed = new ArrayList<>(removeList);
                 removed.removeAll(notRemoved);
                 removeFiles(poolName, List.copyOf(removed));
@@ -269,6 +264,7 @@ public class DiskCleaner extends AbstractCleaner implements CellCommandListener,
                 throw CacheExceptionFactory.exceptionOf(msg);
             }
         } catch (NoRouteToCellException | CacheException e) {
+            LOGGER.info("blacklisting pool {}", poolName);
             _poolsBlackList.put(poolName, System.currentTimeMillis());
             throw e;
         }
@@ -298,7 +294,7 @@ public class DiskCleaner extends AbstractCleaner implements CellCommandListener,
             } catch (ExecutionException e) {
                 LOGGER.warn(e.getCause().getMessage());
             } catch (InterruptedException e) {
-                LOGGER.warn("Cleaner interruption: {}", e.getMessage());
+                LOGGER.warn("cleaner interruption: {}", e.getMessage());
             }
         }
     }
@@ -325,8 +321,7 @@ public class DiskCleaner extends AbstractCleaner implements CellCommandListener,
      */
     void cleanPoolComplete(final String poolName)
           throws InterruptedException, CacheException, NoRouteToCellException {
-        LOGGER.trace("CleanPoolComplete(): poolname={}", poolName);
-
+        LOGGER.info("processing pool {}", poolName);
         try {
             List<String> files = new ArrayList<>(_processAtOnce);
             Timestamp graceTime = Timestamp.from(
@@ -413,7 +408,7 @@ public class DiskCleaner extends AbstractCleaner implements CellCommandListener,
           hint = "clean this file (file will be deleted from DISK)")
     public class CleanFileCommand implements Callable<String> {
 
-        @Argument(required = true, usage = "pnfsid of the file to clean")
+        @Argument(usage = "pnfsid of the file to clean")
         String pnfsid;
 
         @Override
@@ -457,7 +452,7 @@ public class DiskCleaner extends AbstractCleaner implements CellCommandListener,
             if (_poolsBlackList.containsKey(poolName)) {
                 return "This pool is not available for the moment and therefore will not be cleaned.";
             }
-            runDelete(Arrays.asList(new String[]{poolName}));
+            runDelete(Arrays.asList(poolName));
             return "";
         }
     }
