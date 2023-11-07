@@ -3,10 +3,12 @@ package org.dcache.pinmanager;
 import static java.util.Arrays.asList;
 import static java.util.stream.Collectors.toList;
 import static org.dcache.pinmanager.model.Pin.State.PINNED;
+import static org.dcache.pinmanager.model.Pin.State.PINNING;
 import static org.dcache.pinmanager.model.Pin.State.READY_TO_UNPIN;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -50,6 +52,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Delayed;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
@@ -65,6 +68,7 @@ import javax.security.auth.Subject;
 import org.dcache.auth.Subjects;
 import org.dcache.cells.CellMessageDispatcher;
 import org.dcache.cells.CellStub;
+import org.dcache.cells.MessageReply;
 import org.dcache.pinmanager.model.Pin;
 import org.dcache.pool.assumption.Assumptions;
 import org.dcache.pool.classic.IoQueueManager;
@@ -114,10 +118,7 @@ public class PinManagerTests {
         return attributes;
     }
 
-    @Test
-    public void testPinning() throws Exception {
-        TestDao dao = new TestDao();
-
+    private PinRequestProcessor createPinRequestProcessor(TestDao dao) {
         PinRequestProcessor processor = new PinRequestProcessor();
         processor.setScheduledExecutor(new TestExecutor());
         processor.setExecutor(MoreExecutors.directExecutor());
@@ -152,6 +153,13 @@ public class PinManagerTests {
                 };
             }
         });
+        return processor;
+    }
+
+    @Test
+    public void testPinning() throws Exception {
+        TestDao dao = new TestDao();
+        PinRequestProcessor processor = createPinRequestProcessor(dao);
 
         Date expiration = new Date(now() + 30);
         PinManagerPinMessage message =
@@ -174,6 +182,160 @@ public class PinManagerTests {
         assertEquals(POOL1.getName(), pin.getPool());
         assertEquals(PINNED, pin.getState());
         assertValidSticky(pin.getSticky());
+    }
+
+    @Test
+    public void testDuplicateRequestForPinned() throws Exception {
+        TestDao dao = new TestDao();
+        PinRequestProcessor processor = createPinRequestProcessor(dao);
+
+        // create first pin in state PINNED
+
+        Date expiration = new Date(now() + 60);
+
+        Pin createdPin1 = dao.create(dao.set()
+              .subject(Subjects.ROOT)
+              .requestId(REQUEST_ID1)
+              .expirationTime(expiration)
+              .pnfsId(PNFS_ID1)
+              .pool(POOL1.getName())
+              .sticky(STICKY1)
+              .state(PINNED));
+
+        Pin pin1 = dao.get(dao.where().id(createdPin1.getPinId()));
+        assertEquals(PNFS_ID1, pin1.getPnfsId());
+        assertEquals(REQUEST_ID1, pin1.getRequestId());
+        assertEquals(POOL1.getName(), pin1.getPool());
+        assertEquals(PINNED, pin1.getState());
+        assertValidSticky(pin1.getSticky());
+
+        // create new pin request for existing pin
+
+        PinManagerPinMessage message =
+              new PinManagerPinMessage(getAttributes(PNFS_ID1),
+                    PROTOCOL_INFO, REQUEST_ID1, 20);
+        message = processor.messageArrived(message).get();
+        assertEquals(0, message.getReturnCode());
+
+        int numberOfPins = dao.count(dao.where().pnfsId(PNFS_ID1));
+        assertEquals(1, numberOfPins);
+        Pin pin2 = dao.get(dao.where().id(message.getPinId()));
+        assertEquals(PINNED, pin2.getState());
+    }
+
+    @Test
+    public void testDuplicateRequestForPinnedNullrid() throws Exception {
+        TestDao dao = new TestDao();
+        PinRequestProcessor processor = createPinRequestProcessor(dao);
+
+        // create first pin in state PINNED
+
+        Date expiration = new Date(now() + 60);
+        String NULL_RID = null;
+
+        Pin createdPin1 = dao.create(dao.set()
+              .subject(Subjects.ROOT)
+              .requestId(NULL_RID)
+              .expirationTime(expiration)
+              .pnfsId(PNFS_ID1)
+              .pool(POOL1.getName())
+              .sticky(STICKY1)
+              .state(PINNED));
+
+        Pin pin1 = dao.get(dao.where().id(createdPin1.getPinId()));
+        assertEquals(PNFS_ID1, pin1.getPnfsId());
+        assertEquals(NULL_RID, pin1.getRequestId());
+        assertEquals(POOL1.getName(), pin1.getPool());
+        assertEquals(PINNED, pin1.getState());
+        assertValidSticky(pin1.getSticky());
+
+        // create new pin request for existing pin
+
+        PinManagerPinMessage message =
+              new PinManagerPinMessage(getAttributes(PNFS_ID1),
+                    PROTOCOL_INFO, NULL_RID, 20);
+        message = processor.messageArrived(message).get();
+        assertEquals(0, message.getReturnCode());
+
+        int numberOfPins = dao.count(dao.where().pnfsId(PNFS_ID1));
+        assertEquals(1, numberOfPins);
+        Pin pin2 = dao.get(dao.where().id(message.getPinId()));
+        assertEquals(PINNED, pin2.getState());
+    }
+
+    @Test
+    public void testDuplicateRequestForPinning() throws Exception {
+        TestDao dao = new TestDao();
+        PinRequestProcessor processor = createPinRequestProcessor(dao);
+
+        // create first pin in state PINNING
+
+        Pin createdPin1 = dao.create(dao.set()
+              .subject(Subjects.ROOT)
+              .requestId(REQUEST_ID1)
+              .expirationTime(new Date(now() + 30))
+              .pnfsId(PNFS_ID1)
+              .pool(POOL1.getName())
+              .state(PINNING));
+
+        long pinId1 = createdPin1.getPinId();
+        Pin pin1 = dao.get(dao.where().id(pinId1));
+        assertEquals(PNFS_ID1, pin1.getPnfsId());
+        assertEquals(REQUEST_ID1, pin1.getRequestId());
+        assertEquals(POOL1.getName(), pin1.getPool());
+        assertEquals(PINNING, pin1.getState());
+
+        // create duplicate pin request
+
+        PinManagerPinMessage message =
+              new PinManagerPinMessage(getAttributes(PNFS_ID1),
+                    PROTOCOL_INFO, REQUEST_ID1, 30);
+        message.setReplyWhenStarted(true);
+        message = processor.messageArrived(message).get();
+
+        int numberOfPins = dao.count(dao.where().pnfsId(PNFS_ID1));
+        assertEquals(1, numberOfPins);
+        Pin pin2 = dao.get(dao.where().id(message.getPinId()));
+        assertEquals(PINNING, pin2.getState());
+        assertEquals(pinId1, pin2.getPinId());
+    }
+
+    @Test
+    public void testDuplicateRequestForPinningFinishing() throws Exception {
+        TestDao dao = new TestDao();
+        PinRequestProcessor processor = createPinRequestProcessor(dao);
+
+        // create first pin in state PINNING
+
+        Pin createdPin1 = dao.create(dao.set()
+              .subject(Subjects.ROOT)
+              .requestId(REQUEST_ID1)
+              .expirationTime(new Date(now() + 6000))
+              .pnfsId(PNFS_ID1)
+              .pool(POOL1.getName())
+              .state(PINNING));
+
+        long pinId1 = createdPin1.getPinId();
+
+        // create duplicate pin request
+
+        PinManagerPinMessage message = new PinManagerPinMessage(getAttributes(PNFS_ID1),
+              PROTOCOL_INFO, REQUEST_ID1, 30);
+        MessageReply<PinManagerPinMessage> reply = processor.messageArrived(message);
+
+        // make sure second request is waiting for first pin to be established
+
+        int numberOfPins = dao.count(dao.where().pnfsId(PNFS_ID1));
+        assertEquals(1, numberOfPins);
+
+        assertFalse(reply.isDone());
+        PinTask pinTask = mock(PinTask.class);
+        assertTrue(processor.checkPinningStillInProgress(PNFS_ID1, REQUEST_ID1, pinTask));
+
+        // setting first pin to PINNED, check that waiting process succeeds
+
+        dao.update(dao.where().id(pinId1), dao.set().state(PINNED));
+        assertFalse(processor.checkPinningStillInProgress(PNFS_ID1, REQUEST_ID1, pinTask));
     }
 
     @Test

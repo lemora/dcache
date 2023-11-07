@@ -93,6 +93,7 @@
       <property name="maxLifetime" value="${pinmanager.limits.pin-duration}"/>
       <property name="maxLifetimeUnit" value="${pinmanager.limits.pin-duration.unit}"/>
       <property name="poolMonitor" ref="pool-monitor"/>
+      <property name="moveProcessor" ref="move-pin-processor"/>
   </bean>
 
   <bean id="unpin-processor" class="org.dcache.pinmanager.UnpinRequestProcessor">

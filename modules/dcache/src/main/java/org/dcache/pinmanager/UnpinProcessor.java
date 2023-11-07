@@ -105,7 +105,7 @@ public class UnpinProcessor implements Runnable {
     }
 
     private void upin(Semaphore idle, Executor executor, Pin pin) throws InterruptedException {
-        LOGGER.info("Unpining {}", pin.toString());
+        LOGGER.info("Unpinning {}", pin.toString());
         if (pin.getPool() == null) {
             LOGGER.debug("No pool found for pin {}, pnfsid {}; no sticky flags to clear",
                   pin.getPinId(), pin.getPnfsId());

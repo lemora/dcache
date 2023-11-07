@@ -1,6 +1,5 @@
 package org.dcache.pinmanager;
 
-
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.MINUTES;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -24,12 +23,20 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.Date;
 import java.util.EnumSet;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.PatternSyntaxException;
+import java.util.stream.Collectors;
 import javax.security.auth.Subject;
 import org.dcache.cells.AbstractMessageCallback;
 import org.dcache.cells.CellStub;
@@ -40,6 +47,7 @@ import org.dcache.poolmanager.PoolManagerStub;
 import org.dcache.poolmanager.PoolMonitor;
 import org.dcache.poolmanager.PoolSelector;
 import org.dcache.poolmanager.SelectedPool;
+import org.dcache.vehicles.FileAttributes;
 import org.dcache.vehicles.PnfsGetFileAttributes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,11 +70,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>
  * Database operations are blocking. Communication with PoolManager and pools is asynchronous.
  */
-public class PinRequestProcessor
-      implements CellMessageReceiver {
+public class PinRequestProcessor implements CellMessageReceiver {
 
-    private static final Logger LOGGER =
-          LoggerFactory.getLogger(PinRequestProcessor.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(PinRequestProcessor.class);
 
     /**
      * The delay we use after a pin request failed and before retrying the request.
@@ -95,6 +101,7 @@ public class PinRequestProcessor
     private TimeUnit _maxLifetimeUnit;
 
     private PoolMonitor _poolMonitor;
+    private MovePinRequestProcessor _moveProcessor;
 
     @Required
     public void setScheduledExecutor(ScheduledExecutorService executor) {
@@ -141,6 +148,11 @@ public class PinRequestProcessor
         _poolMonitor = poolMonitor;
     }
 
+    @Required
+    public void setMoveProcessor(MovePinRequestProcessor processor) {
+        _moveProcessor = processor;
+    }
+
     public long getMaxLifetime() {
         return _maxLifetime;
     }
@@ -166,32 +178,123 @@ public class PinRequestProcessor
         }
     }
 
-    public MessageReply<PinManagerPinMessage>
-    messageArrived(PinManagerPinMessage message)
+    public MessageReply<PinManagerPinMessage> messageArrived(PinManagerPinMessage message)
           throws CacheException {
-        MessageReply<PinManagerPinMessage> reply =
-              new MessageReply<>();
-
+        MessageReply<PinManagerPinMessage> reply = new MessageReply<>();
         enforceLifetimeLimit(message);
 
-        PinTask task = createTask(message, reply);
-        if (task != null) {
-            if (!task.getFileAttributes()
-                  .isDefined(PoolMgrSelectReadPoolMsg.getRequiredAttributes())) {
-                rereadNameSpaceEntry(task);
-            } else {
-                selectReadPool(task);
-            }
-            if (message.isReplyWhenStarted()) {
-                reply.reply(message);
-            }
+        List<Pin> activePins = getExistingPins(message.getPnfsId(), message.getRequestId());
+
+        Optional<Pin> pinnedPin = activePins.stream().findAny()
+              .filter(pin -> pin.getState() == PINNED);
+
+        if (pinnedPin.isPresent()) {
+            Pin pin = pinnedPin.get();
+            LOGGER.debug("Requested pin {} for {} already exists. Updating expiration time.",
+                  pin.getPinId(), message.getPnfsId());
+            extendExistingPinLifetime(pin, message.getFileAttributes(), message.getLifetime());
+            message.setPin(pin);
+            reply.reply(message);
+            return reply;
         }
 
+        Optional<Pin> pinningPin = activePins.stream().findAny()
+              .filter(pin -> pin.getState() == PINNING);
+
+        if (pinningPin.isPresent()) {
+            Pin pin = pinningPin.get();
+
+            // Resubmission; pinning in progress. Register pin state listener that waits for the pin to be established
+            LOGGER.debug("Pin resubmission for {} with rid {}. Registering state listener.",
+                  message.getPnfsId(), message.getRequestId());
+            PinTask task = createTask(message, reply, pin);
+            if (message.isReplyWhenStarted()) {
+                reply.reply(message);
+            } else {
+                registerPinStateListener(task);
+            }
+            return reply;
+        }
+
+        PinTask task = createTask(message, reply);
+        if (!task.getFileAttributes().isDefined(PoolMgrSelectReadPoolMsg.getRequiredAttributes())) {
+            rereadNameSpaceEntry(task);
+        } else {
+            selectReadPool(task);
+        }
+        if (message.isReplyWhenStarted()) {
+            reply.reply(message);
+        }
         return reply;
     }
 
-    protected EnumSet<RequestContainerV5.RequestState>
-    checkStaging(PinTask task) {
+    public void extendExistingPinLifetime(Pin pin, FileAttributes fileAttributes,
+          long lifetime) {
+        if (pin.hasRemainingLifetimeLessThan(lifetime)) {
+            try {
+                PinManagerExtendPinMessage message = new PinManagerExtendPinMessage(fileAttributes,
+                      pin.getPinId(),
+                      lifetime);
+                LOGGER.debug("Extending lifetime: {}", lifetime);
+                _moveProcessor.messageArrived(message);
+            } catch (CacheException | InterruptedException e) {
+                LOGGER.warn("Failed to update pin lifetime for {} ({})", pin.getPnfsId(),
+                      pin.getPinId());
+            }
+        }
+    }
+
+    public List<Pin> getExistingPins(PnfsId pnfsId, String requestId) {
+        PinDao.PinCriterion criterion = _dao.where().pnfsId(pnfsId).requestId(requestId);
+        List<Pin> pins = _dao.get(criterion);
+        LOGGER.debug("Found {} pin IDs for {} ({})", pins.size(), pnfsId, requestId);
+        return pins;
+    }
+
+    protected boolean checkPinningStillInProgress(PnfsId pnfsId, String requestId, PinTask task) {
+        Pin pin = _dao.get(_dao.where().pnfsId(pnfsId).requestId(requestId));
+        if (pin == null) {
+            task.fail(CacheException.UNEXPECTED_SYSTEM_EXCEPTION, "Pinning failed.");
+            return false;
+        }
+
+        Pin.State pinState = pin.getState();
+        if (pinState == PINNING) {
+            return true;
+
+        } else if (pinState == PINNED) {
+            try {
+                extendExistingPinLifetime(pin, task.getFileAttributes(), task.getLifetime());
+                setToPinned(task);
+                task.success();
+            } catch (CacheException e) {
+                fail(task, e.getRc(), e.getMessage());
+                return false;
+            }
+            return true;
+        }
+
+        task.fail(CacheException.UNEXPECTED_SYSTEM_EXCEPTION, "Pinning failed.");
+        return false;
+    }
+
+    public void registerPinStateListener(PinTask task) {
+        PnfsId pnfsId = task.getPnfsId();
+        String requestId = task.getRequestId();
+        final ScheduledFuture<?>[] future = new ScheduledFuture<?>[1];
+        Runnable pinWatcher = new Runnable() {
+            @Override
+            public void run() {
+                boolean pinningOngoing = checkPinningStillInProgress(pnfsId, requestId, task);
+                if (pinningOngoing) {
+                    future[0] = _scheduledExecutor.schedule(this, 60, TimeUnit.SECONDS);
+                }
+            }
+        };
+        future[0] = _scheduledExecutor.schedule(pinWatcher, 5, TimeUnit.SECONDS);
+    }
+
+    protected EnumSet<RequestContainerV5.RequestState> checkStaging(PinTask task) {
         if (task.isStagingDenied()) {
             return RequestContainerV5.allStatesExceptStage;
         }
@@ -213,9 +316,18 @@ public class PinRequestProcessor
         if (!task.isValidIn(delay)) {
             fail(task, CacheException.TIMEOUT, "Pin request TTL exceeded: " + reason);
         } else {
-            if (!isInStatePINNING(task.getPnfsId(), task.getRequestId())) {
-                LOGGER.info("Dropping pin request for pnfsid {}, requestId {} as it has "
-                      + "meanwhile been unpinned.", task.getPnfsId(), task.getRequestId());
+            if (isInPinState(task.getPnfsId(), task.getRequestId(), PINNED)) {
+                try {
+                    setToPinned(task);
+                    task.success();
+                } catch (CacheException e) {
+                    fail(task, e.getRc(), e.getMessage());
+                }
+            } else if (!isInPinState(task.getPnfsId(), task.getRequestId(), PINNING)) {
+                LOGGER.debug(
+                      "Dropping pin request for pnfsid {}, requestId {} as it has "
+                            + "meanwhile been unpinned.", task.getPnfsId(),
+                      task.getRequestId());
                 return;
             }
             _scheduledExecutor.schedule(() -> {
@@ -301,8 +413,7 @@ public class PinRequestProcessor
               }, _executor);
     }
 
-    private void selectReadPool(final PinTask task)
-          throws CacheException {
+    private void selectReadPool(final PinTask task) throws CacheException {
         try {
             PoolSelector poolSelector =
                   _poolMonitor.getPoolSelector(task.getFileAttributes(),
@@ -424,6 +535,7 @@ public class PinRequestProcessor
                     true,
                     task.getSticky(),
                     poolExpiration);
+
         CellStub.addCallback(_poolStub.send(new CellPath(poolAddress), msg),
               new AbstractMessageCallback<PoolSetStickyMessage>() {
                   @Override
@@ -504,26 +616,14 @@ public class PinRequestProcessor
 
     @Transactional(isolation = REPEATABLE_READ)
     protected PinTask createTask(PinManagerPinMessage message,
+          MessageReply<PinManagerPinMessage> reply, Pin pin) {
+        return new PinTask(message, reply, pin);
+    }
+
+    @Transactional(isolation = REPEATABLE_READ)
+    protected PinTask createTask(PinManagerPinMessage message,
           MessageReply<PinManagerPinMessage> reply) {
         PnfsId pnfsId = message.getFileAttributes().getPnfsId();
-
-        if (message.getRequestId() != null) {
-            Pin pin = _dao.get(_dao.where().pnfsId(pnfsId).requestId(message.getRequestId()));
-            if (pin != null) {
-                /* In this case the request is a resubmission. If the
-                 * previous pin completed then use it. Otherwise abort the
-                 * previous pin and create a new one.
-                 */
-                if (pin.getState() == PINNED) {
-                    message.setPin(pin);
-                    reply.reply(message);
-                    return null;
-                }
-
-                _dao.update(pin, _dao.set().state(READY_TO_UNPIN).requestId(null));
-            }
-        }
-
         Pin pin = _dao.create(_dao.set()
               .subject(message.getSubject())
               .state(PINNING)
@@ -545,8 +645,10 @@ public class PinRequestProcessor
     }
 
     @Transactional(isolation = REPEATABLE_READ)
-    protected boolean isInStatePINNING(PnfsId pnfsid, String requestId) {
-        return _dao.get(_dao.where().pnfsId(pnfsid).requestId(requestId).state(PINNING)) != null;
+    protected boolean isInPinState(PnfsId pnfsid, String requestId, Pin.State pinState) {
+        return _dao.get(
+              _dao.where().pnfsId(pnfsid).requestId(requestId).state(pinState))
+              != null;
     }
 
     @Transactional(isolation = REPEATABLE_READ)
@@ -562,8 +664,7 @@ public class PinRequestProcessor
     }
 
     @Transactional(isolation = REPEATABLE_READ)
-    protected void setToPinned(PinTask task)
-          throws CacheException {
+    protected void setToPinned(PinTask task) throws CacheException {
         updateTask(task, _dao.set().expirationTime(task.getExpirationTime()).state(PINNED));
     }
 

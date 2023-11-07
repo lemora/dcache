@@ -225,8 +225,12 @@ public class JdbcDao extends JdbcDaoSupport implements PinDao {
         }
 
         @Override
-        public JdbcPinCriterion requestId(String requestId) {
-            addClause("request_id = ?", requestId);
+        public JdbcPinCriterion requestId(@Nullable String requestId) {
+            if (requestId == null) {
+                addClause("request_id IS NULL");
+            } else {
+                addClause("request_id = ?", requestId);
+            }
             this.requestId = requestId;
             return this;
         }
