@@ -20,7 +20,8 @@ public enum ChecksumType {
     MD4_TYPE(3, "MD4", 128),
     SHA1(4, "SHA-1", 160),
     SHA256(5, "SHA-256", 256),
-    SHA512(6, "SHA-512", 512);
+    SHA512(6, "SHA-512", 512),
+    CRC32(7, "CRC-32", 32);
 
     private final int type;
     /**

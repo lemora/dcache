@@ -5,6 +5,7 @@ import static com.google.common.base.Strings.nullToEmpty;
 import static com.google.common.collect.Collections2.transform;
 import static com.google.common.collect.Maps.transformEntries;
 import static org.dcache.util.ChecksumType.ADLER32;
+import static org.dcache.util.ChecksumType.CRC32;
 import static org.dcache.util.ChecksumType.MD4_TYPE;
 import static org.dcache.util.ChecksumType.MD5_TYPE;
 import static org.dcache.util.ChecksumType.SHA1;
@@ -53,6 +54,19 @@ public class Checksums {
           .put(SHA1, "sha")
           .put(SHA256, "sha-256")
           .put(SHA512, "sha-512")
+          .put(CRC32, "crc32c")
+          .build();
+
+    /**
+     * Successor of RFC 3230
+     */
+    private static final Map<ChecksumType, String> CHECKSUMTYPE_TO_RFC9530_NAME = ImmutableMap.<ChecksumType, String>builder()
+          .put(ADLER32, "adler32")
+          .put(MD5_TYPE, "md5")
+          .put(SHA1, "sha")
+          .put(SHA256, "sha-256")
+          .put(SHA512, "sha-512")
+          .put(CRC32, "crc32c")
           .build();
 
     public static final boolean isValidRFC3230Name(String s) {

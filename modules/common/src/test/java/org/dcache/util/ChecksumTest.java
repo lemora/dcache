@@ -6,6 +6,7 @@ import static org.dcache.util.ChecksumType.MD5_TYPE;
 import static org.dcache.util.ChecksumType.SHA1;
 import static org.dcache.util.ChecksumType.SHA256;
 import static org.dcache.util.ChecksumType.SHA512;
+import static org.dcache.util.ChecksumType.CRC32;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.not;
@@ -24,6 +25,15 @@ public class ChecksumTest {
         assertThat(checksum.getValue(), equalTo("e7e46ff10df57532f816596327e98f9597b8c21e"));
         assertThat(checksum.toString(), equalTo("4:e7e46ff10df57532f816596327e98f9597b8c21e"));
         assertThat(checksum.getType(), equalTo(SHA1));
+    }
+
+    @Test
+    public void testValidCrc32FromString() {
+        Checksum checksum = new Checksum(CRC32, "3610A686");
+
+        assertThat(checksum.getValue(), equalTo("3610A686"));
+        assertThat(checksum.toString(), equalTo("5:3610A686"));
+        assertThat(checksum.getType(), equalTo(CRC32));
     }
 
     @Test
