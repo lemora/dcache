@@ -24,8 +24,7 @@ public class QueryRequestProcessor
     }
 
 
-    public PinManagerCountPinsMessage
-    messageArrived(PinManagerCountPinsMessage message)
+    public PinManagerCountPinsMessage messageArrived(PinManagerCountPinsMessage message)
           throws CacheException {
         PinCriterion criterion = _dao.where().pnfsId(message.getPnfsId());
         String requestId = message.getRequestId();

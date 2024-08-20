@@ -6,6 +6,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.dcache.pinmanager.model.Pin.State.FAILED_TO_UNPIN;
 import static org.dcache.pinmanager.model.Pin.State.PINNED;
 import static org.dcache.pinmanager.model.Pin.State.PINNING;
+import static org.dcache.pinmanager.model.Pin.State.READY_TO_PIN;
 import static org.dcache.pinmanager.model.Pin.State.READY_TO_UNPIN;
 import static org.dcache.pinmanager.model.Pin.State.UNPINNING;
 
@@ -35,6 +36,7 @@ public class PinManager implements CellMessageReceiver, LeaderLatchListener, Cel
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PinManager.class);
     private static final long INITIAL_EXPIRATION_DELAY = SECONDS.toMillis(15);
+    private static final long INITIAL_PIN_DELAY = SECONDS.toMillis(30);
     private static final long INITIAL_UNPIN_DELAY = SECONDS.toMillis(30);
 
     private ScheduledExecutorService executor;
@@ -44,7 +46,8 @@ public class PinManager implements CellMessageReceiver, LeaderLatchListener, Cel
 
     private long expirationPeriod;
     private TimeUnit expirationPeriodUnit;
-    // Period in which to reset all pins that failed to be unpinned from state FAILED_TO_UNPIN to READY_TO_UNPIN
+
+    /* Period in which to reset all pins that failed to be unpinned from state FAILED_TO_UNPIN to READY_TO_UNPIN */
     private Duration resetFailedUnpinsPeriod;
     private int maxUnpinsPerRun = -1;
 
@@ -95,10 +98,31 @@ public class PinManager implements CellMessageReceiver, LeaderLatchListener, Cel
     }
 
     /**
+     * Resets all pins in state PINNING to READY_TO_PIN, because after a PinManager HA master
+     * change, these are abandoned and need to be retried by the new HA master.
+     */
+    private void resetTransitivePinningStates() {
+        try {
+            // TODO: cancel these pins in PoolManager!
+            dao.update(dao.where()
+                        .state(PINNING),
+                  dao.set()
+                        .state(READY_TO_PIN)
+                        .pool(null));
+        } catch (JDOException | DataAccessException e) {
+            LOGGER.error("Database failure while trying to reset failed PINNING: {}",
+                  e.getMessage());
+        } catch (RuntimeException e) {
+            LOGGER.error("Unexpected failure while resetting PINNING pins", e);
+        }
+    }
+
+    /**
      * Resets all pins in state UNPINNING and FAILED_TO_UNPIN to READY_TO_UNPIN.
      */
-    private void markAllExpiredPinsReadyToUnpin() {
+    private void resetTransitiveUnpinningStates() {
         dao.update(dao.where()
+                    .stateIsNot(READY_TO_PIN)
                     .stateIsNot(PINNING)
                     .stateIsNot(PINNED)
                     .stateIsNot(READY_TO_UNPIN),
@@ -107,18 +131,19 @@ public class PinManager implements CellMessageReceiver, LeaderLatchListener, Cel
     }
 
     /**
-     * This task transitions all pins that have exceeded their lifetime and are in state PINNING or
-     * PINNED to state READY_TO_UNPIN. It removes the pool, which expires pins on its own and does
-     * not need to be contacted for regular expiries. As PoolManager is aware of the timeout for
-     * pins in state PINNING, it should also delete the request on its own if it is still ongoing.
+     * This task transitions all pins that have exceeded their lifetime and are in state
+     * READY_TO_PIN, PINNING or PINNED to state READY_TO_UNPIN. It removes the pool field, as the
+     * pool will remove these sticky bits on its own and does not need to be contacted for regular
+     * expiries. As PoolManager is aware of the timeout for PINNING requests, PoolManager should
+     * delete these ongoing request on its own as well.
      */
     private class ExpirationTask implements Runnable {
 
-        private AtomicInteger count = new AtomicInteger();
+        private final AtomicInteger count = new AtomicInteger();
 
         @Override
         public void run() {
-            NDC.push("BackgroundExpiration-" + count.incrementAndGet());
+            NDC.push("PinExpiration-" + count.incrementAndGet());
             try {
                 dao.update(dao.where()
                             .expirationTimeBefore(new Date())
@@ -145,11 +170,11 @@ public class PinManager implements CellMessageReceiver, LeaderLatchListener, Cel
      */
     private class ResetFailedUnpinsTask implements Runnable {
 
-        private AtomicInteger count = new AtomicInteger();
+        private final AtomicInteger count = new AtomicInteger();
 
         @Override
         public void run() {
-            NDC.push("BackgroundResetFailedUnpins-" + count.incrementAndGet());
+            NDC.push("UnpinExpiration-" + count.incrementAndGet());
             try {
                 dao.update(dao.where()
                             .state(FAILED_TO_UNPIN),
@@ -168,28 +193,38 @@ public class PinManager implements CellMessageReceiver, LeaderLatchListener, Cel
         }
     }
 
+    // create PinProcessor here or inject? dao issue
+    private PinProcessor pinTask;
     private UnpinProcessor unpinTask;
     private final ExpirationTask expirationTask = new ExpirationTask();
     private final ResetFailedUnpinsTask resetFailedUnpinsTask = new ResetFailedUnpinsTask();
 
+    private ScheduledFuture<?> pinFuture;
     private ScheduledFuture<?> unpinFuture;
     private ScheduledFuture<?> expirationFuture;
     private ScheduledFuture<?> resetFailedUnpinsFuture;
 
     public void init() {
         // Needs to be assigned after dao has been initialized
+        pinTask = new PinProcessor(dao, poolStub, poolMonitor, maxUnpinsPerRun);
         unpinTask = new UnpinProcessor(dao, poolStub, poolMonitor, maxUnpinsPerRun);
     }
 
     @Override
     public void isLeader() {
         LOGGER.info("Resetting existing intermediate pin states.");
-        markAllExpiredPinsReadyToUnpin();
+        resetTransitivePinningStates();
+        resetTransitiveUnpinningStates();
 
         LOGGER.info("Scheduling Expiration and Unpin tasks.");
         expirationFuture = executor.scheduleWithFixedDelay(
               new FireAndForgetTask(expirationTask),
               INITIAL_EXPIRATION_DELAY,
+              expirationPeriodUnit.toMillis(expirationPeriod),
+              MILLISECONDS);
+        pinFuture = executor.scheduleWithFixedDelay(
+              new FireAndForgetTask(pinTask),
+              INITIAL_PIN_DELAY,
               expirationPeriodUnit.toMillis(expirationPeriod),
               MILLISECONDS);
         unpinFuture = executor.scheduleWithFixedDelay(
@@ -208,16 +243,18 @@ public class PinManager implements CellMessageReceiver, LeaderLatchListener, Cel
     public void notLeader() {
         LOGGER.info("Cancelling Expiration, ResetFailedUnpins and Unpin tasks.");
         expirationFuture.cancel(false);
+        pinFuture.cancel(true);
         unpinFuture.cancel(true);
         resetFailedUnpinsFuture.cancel(true);
     }
 
     @Override
     public void getInfo(PrintWriter pw) {
-        pw.printf("Expiration and unpin period:            %s %s\n", expirationPeriod,
+        pw.printf("Period for expiration and unpinning: %s %s\n", expirationPeriod,
               expirationPeriodUnit);
-        pw.printf("Reset pins that failed to unpin period: %s\n",
+        pw.printf("Period for pinning: %s %s\n", expirationPeriod, expirationPeriodUnit);
+        pw.printf("Max. unpin operations per run: %s\n", maxUnpinsPerRun);
+        pw.printf("Period for resetting pins that failed to unpin: %s\n",
               TimeUtils.describe(resetFailedUnpinsPeriod).orElse("-"));
-        pw.printf("Max unpin operations per run:           %s\n", maxUnpinsPerRun);
     }
 }

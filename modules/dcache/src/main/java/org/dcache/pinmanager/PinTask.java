@@ -18,16 +18,17 @@ public class PinTask {
     private static final Logger LOGGER = LoggerFactory.getLogger(PinTask.class);
 
     private final PinManagerPinMessage _request;
-    private final Optional<MessageReply<PinManagerPinMessage>> _reply;
     private Pin _pin;
     private PoolMgrSelectReadPoolMsg.Context _readPoolSelectionContext;
 
     public PinTask(PinManagerPinMessage request, MessageReply<PinManagerPinMessage> reply,
           Pin pin) {
         _request = request;
-        _reply = request.isReplyWhenStarted() ? Optional.empty() : Optional.of(reply);
         _pin = pin;
     }
+
+    // TODO: create new constructor that takes database entry instead of PinManagerPinMessage
+//    public PinTask()
 
     public Pin getPin() {
         return _pin;
@@ -38,7 +39,7 @@ public class PinTask {
     }
 
     public boolean isValidIn(long delay) {
-        return _reply.map(r -> r.isValidIn(delay)).orElse(Boolean.TRUE);
+        return true;
     }
 
     public PnfsId getPnfsId() {
@@ -108,15 +109,10 @@ public class PinTask {
     }
 
     public void fail(int rc, String error) {
-        _reply.ifPresent(r -> r.fail(_request, rc, error));
         LOGGER.warn("Failed to pin {}: {} [{}]", _pin.getPnfsId(), error, rc);
     }
 
     public void success() {
-        _reply.ifPresent(r -> {
-            _request.setPin(_pin);
-            r.reply(_request);
-        });
         LOGGER.info("Pinned {} on {} ({})", _pin.getPnfsId(), _pin.getPool(), _pin.getPinId());
     }
 }
