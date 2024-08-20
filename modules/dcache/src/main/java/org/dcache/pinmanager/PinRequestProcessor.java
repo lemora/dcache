@@ -24,6 +24,8 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.Date;
 import java.util.EnumSet;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executor;
@@ -166,14 +168,17 @@ public class PinRequestProcessor
         }
     }
 
-    public MessageReply<PinManagerPinMessage>
-    messageArrived(PinManagerPinMessage message)
+    public MessageReply<PinManagerPinMessage> messageArrived(PinManagerPinMessage message)
           throws CacheException {
-        MessageReply<PinManagerPinMessage> reply =
-              new MessageReply<>();
+        if (message.isReplyWhenStarted()) {
+            return asyncPinning(message);
+        }
+        return synchronousPinning(message);
+    }
 
+    private MessageReply<PinManagerPinMessage> synchronousPinning(PinManagerPinMessage message) throws CacheException {
+        MessageReply<PinManagerPinMessage> reply = new MessageReply<>();
         enforceLifetimeLimit(message);
-
         PinTask task = createTask(message, reply);
         if (task != null) {
             if (!task.getFileAttributes()
@@ -188,6 +193,47 @@ public class PinRequestProcessor
         }
 
         return reply;
+    }
+
+    private MessageReply<PinManagerPinMessage> asyncPinning(PinManagerPinMessage message) {
+        List<Pin> activePins = getExistingPins(message.getPnfsId(), message.getRequestId());
+
+        Optional<Pin> pinnedPin = activePins.stream().findAny().filter(pin -> pin.getState() == PINNED);
+
+        if (pinnedPin.isPresent()) {
+            Pin pin = pinnedPin.get();
+            LOGGER.debug("Requested pin {} for {} already exists. Updating expiration time.",
+                  pin.getPinId(), message.getPnfsId());
+            extendExistingPinLifetime(pin, message.getFileAttributes(), message.getLifetime());
+            message.setPin(pin);
+            reply.reply(message);
+            return reply;
+        }
+
+        Optional<Pin> pinningPin = activePins.stream().findAny()
+              .filter(pin -> pin.getState() == PINNING);
+
+        if (pinningPin.isPresent()) {
+            Pin pin = pinningPin.get();
+
+            // Resubmission; pinning in progress. Register pin state listener that waits for the pin to be established
+            LOGGER.debug("Pin resubmission for {} with rid {}. Registering state listener.",
+                  message.getPnfsId(), message.getRequestId());
+            PinTask task = createTask(message, reply, pin);
+            if (message.isReplyWhenStarted()) {
+                reply.reply(message);
+            } else {
+                registerPinStateListener(task);
+            }
+            return reply;
+        }
+    }
+
+    public List<Pin> getExistingPins(PnfsId pnfsId, String requestId) {
+        PinDao.PinCriterion criterion = _dao.where().pnfsId(pnfsId).requestId(requestId);
+        List<Pin> pins = _dao.get(criterion);
+        LOGGER.debug("Found {} pin IDs for {} ({})", pins.size(), pnfsId, requestId);
+        return pins;
     }
 
     protected EnumSet<RequestContainerV5.RequestState>
