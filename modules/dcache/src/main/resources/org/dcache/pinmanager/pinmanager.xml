@@ -68,7 +68,7 @@
     <property name="poolManager" ref="pool-manager-stub"/>
   </bean>
 
-  <bean id="pin-processor" class="org.dcache.pinmanager.PinRequestProcessor">
+  <bean id="pin-processor" class="org.dcache.pinmanager.PinProcessor">
     <description>Processes pin requests</description>
     <property name="poolManagerStub">
       <bean class="org.dcache.poolmanager.PoolManagerStub">
@@ -97,8 +97,13 @@
     <property name="poolMonitor" ref="pool-monitor"/>
   </bean>
 
-  <bean id="unpin-processor" class="org.dcache.pinmanager.UnpinRequestProcessor">
-    <description>Processes unpin requests</description>
+  <bean id="pin-request-processor" class="org.dcache.pinmanager.PinRequestProcessor">
+    <description>Accepts and processes pin requests</description>
+    <property name="dao" ref="dao"/>
+  </bean>
+
+  <bean id="unpin-request-processor" class="org.dcache.pinmanager.UnpinRequestProcessor">
+    <description>Accepts and processes unpin requests</description>
     <property name="dao" ref="dao"/>
     <property name="authorizationPolicy" ref="pdp"/>
   </bean>
@@ -129,8 +134,8 @@
     <property name="pinManager" ref="pinmanager"/>
     <property name="pnfsStub" ref="pnfs-stub"/>
     <property name="dao" ref="dao"/>
-    <property name="pinProcessor" ref="pin-processor"/>
-    <property name="unpinProcessor" ref="unpin-processor"/>
+    <property name="pinProcessor" ref="pin-request-processor"/>
+    <property name="unpinProcessor" ref="unpin-request-processor"/>
     <property name="moveProcessor" ref="move-pin-processor"/>
     <property name="poolMonitor" ref="pool-monitor"/>
   </bean>

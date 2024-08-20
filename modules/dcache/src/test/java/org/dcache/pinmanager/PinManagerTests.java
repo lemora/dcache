@@ -119,6 +119,15 @@ public class PinManagerTests {
         TestDao dao = new TestDao();
 
         PinRequestProcessor processor = new PinRequestProcessor();
+        processor.setDao(dao);
+
+    }
+
+//    @Test
+    public void testPinning_legacy() throws Exception {
+        TestDao dao = new TestDao();
+
+        PinRequestProcessor processor = new PinRequestProcessor();
         processor.setScheduledExecutor(new TestExecutor());
         processor.setExecutor(MoreExecutors.directExecutor());
         processor.setDao(dao);

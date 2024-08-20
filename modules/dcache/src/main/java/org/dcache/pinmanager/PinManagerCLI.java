@@ -54,11 +54,10 @@ public class PinManagerCLI
 
     private PnfsHandler _pnfs;
     private PoolMonitor _poolMonitor;
-    private PinManager _pinManager;
     private PinDao _dao;
-    private PinRequestProcessor _pinProcessor;
-    private UnpinRequestProcessor _unpinProcessor;
-    private MovePinRequestProcessor _moveProcessor;
+    private PinRequestProcessor _pinRequestProcessor;
+    private UnpinRequestProcessor _unpinRequestProcessor;
+    private MovePinRequestProcessor _moveRequestProcessor;
 
     @Required
     public void setPnfsStub(CellStub stub) {
@@ -71,23 +70,18 @@ public class PinManagerCLI
     }
 
     @Required
-    public void setPinManager(PinManager pinManager) {
-        _pinManager = pinManager;
-    }
-
-    @Required
     public void setPinProcessor(PinRequestProcessor processor) {
-        _pinProcessor = processor;
+        _pinRequestProcessor = processor;
     }
 
     @Required
     public void setUnpinProcessor(UnpinRequestProcessor processor) {
-        _unpinProcessor = processor;
+        _unpinRequestProcessor = processor;
     }
 
     @Required
     public void setMoveProcessor(MovePinRequestProcessor processor) {
-        _moveProcessor = processor;
+        _moveRequestProcessor = processor;
     }
 
     @Required
@@ -103,7 +97,7 @@ public class PinManagerCLI
         PinManagerPinMessage message = new PinManagerPinMessage(FileAttributes.ofPnfsId(pnfsId),
               protocolInfo, requestId, lifetime);
         message.setReplyWhenStarted(replyWhenStarted);
-        return _pinProcessor.messageArrived(message);
+        return _pinRequestProcessor.messageArrived(message);
     }
 
     @Command(name = "pin", hint = "pin a file to disk",
@@ -149,7 +143,7 @@ public class PinManagerCLI
             if (!pin.equals("*")) {
                 message.setPinId(Long.parseLong(pin));
             }
-            _unpinProcessor.messageArrived(message);
+            _unpinRequestProcessor.messageArrived(message);
             return "The pin is now scheduled for removal";
         }
     }
@@ -179,7 +173,7 @@ public class PinManagerCLI
                   _pnfs.getFileAttributes(pnfsId, attributes);
             PinManagerExtendPinMessage message =
                   new PinManagerExtendPinMessage(fileAttributes, pin, millis);
-            message = _moveProcessor.messageArrived(message);
+            message = _moveRequestProcessor.messageArrived(message);
             if (message.getExpirationTime() == null) {
                 return String.format("[%d] %s pinned",
                       message.getPinId(), pnfsId);
@@ -400,7 +394,7 @@ public class PinManagerCLI
                 try {
                     PinManagerUnpinMessage message =
                           new PinManagerUnpinMessage(pnfsId);
-                    _unpinProcessor.messageArrived(message);
+                    _unpinRequestProcessor.messageArrived(message);
                 } catch (CacheException e) {
                     out.append(pnfsId).append(": ").append(e.getMessage()).append('\n');
                 }
@@ -544,7 +538,7 @@ public class PinManagerCLI
                     PinManagerUnpinMessage message =
                           new PinManagerUnpinMessage(pnfsId);
                     message.setRequestId(_requestId);
-                    _unpinProcessor.messageArrived(message);
+                    _unpinRequestProcessor.messageArrived(message);
                 }
                 _cancelled = true;
             }
