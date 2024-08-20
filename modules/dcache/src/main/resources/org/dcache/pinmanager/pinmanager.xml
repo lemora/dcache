@@ -97,6 +97,12 @@
     <property name="poolMonitor" ref="pool-monitor"/>
   </bean>
 
+  <bean id="pin-processor" class="org.dcache.pinmanager.UnpinRequestProcessor">
+    <description>Processes unpin requests</description>
+    <property name="dao" ref="dao"/>
+    <property name="authorizationPolicy" ref="pdp"/>
+  </bean>
+
   <bean id="unpin-processor" class="org.dcache.pinmanager.UnpinRequestProcessor">
     <description>Processes unpin requests</description>
     <property name="dao" ref="dao"/>

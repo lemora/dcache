@@ -7,10 +7,11 @@ import diskCacheV111.util.PnfsId;
 import diskCacheV111.vehicles.Message;
 import diskCacheV111.vehicles.PoolMgrSelectReadPoolMsg;
 import diskCacheV111.vehicles.ProtocolInfo;
-
 import java.io.ObjectStreamException;
 import java.util.Date;
 import java.util.EnumSet;
+import java.util.Optional;
+import jline.internal.Nullable;
 import org.dcache.auth.attributes.Restriction;
 import org.dcache.auth.attributes.Restrictions;
 import org.dcache.namespace.FileAttribute;
@@ -29,7 +30,6 @@ public class PinManagerPinMessage extends Message {
     private String _pool;
     private final String _requestId;
     private Date _expirationTime;
-    private boolean _replyWhenStarted;
     private boolean _denyStaging;
 
     public PinManagerPinMessage(FileAttributes fileAttributes,
@@ -49,26 +49,6 @@ public class PinManagerPinMessage extends Message {
           String requestId,
           long lifetime) {
         this(fileAttributes, protocolInfo, Restrictions.none(), requestId, lifetime);
-     }
-
-    /**
-     * Choose whether to wait for the pin to be established before returning. If value is true then
-     * do not wait for file to be staged, but return straight away.  Calling getPool, getPinId and
-     * getExpirationTime will all return null, unless this request is a retry and the original
-     * request succeeded (have establishing a pin) in which case the details of that pin are
-     * available through those methods.
-     * <p>
-     * If set to false (the default) then the message returns once the pin request has been
-     * processed and the pin established, or if there was an error.
-     *
-     * @param value whether to reply after the pinning task has been started.
-     */
-    public void setReplyWhenStarted(boolean value) {
-        _replyWhenStarted = value;
-    }
-
-    public boolean isReplyWhenStarted() {
-        return _replyWhenStarted;
     }
 
     public void setDenyStaging(boolean value) {
@@ -107,8 +87,11 @@ public class PinManagerPinMessage extends Message {
         return _protocolInfo;
     }
 
-    public Restriction getRestriction() { return _restriction; }
+    public Restriction getRestriction() {
+        return _restriction;
+    }
 
+    @Nullable
     public String getPool() {
         return _pool;
     }
@@ -117,8 +100,8 @@ public class PinManagerPinMessage extends Message {
         _pool = pool;
     }
 
-    public long getPinId() {
-        return _pinId;
+    public Optional<Long> getPinId() {
+        return _pinId == 0 ? Optional.empty() : Optional.of(_pinId);
     }
 
     public void setPinId(long pinId) {
@@ -141,8 +124,8 @@ public class PinManagerPinMessage extends Message {
 
     @Override
     public String toString() {
-        return "PinManagerPinMessage[" + _fileAttributes + "," +
-              _protocolInfo + "," + _lifetime + "]";
+        return "PinManagerPinMessage[" + _fileAttributes + "," + _protocolInfo + "," + _lifetime
+              + "]";
     }
 
     public static EnumSet<FileAttribute> getRequiredAttributes() {
@@ -152,7 +135,9 @@ public class PinManagerPinMessage extends Message {
     }
 
     private Object readResolve() throws ObjectStreamException {
-        if (_restriction == null) { _restriction = Restrictions.none(); }
+        if (_restriction == null) {
+            _restriction = Restrictions.none();
+        }
         return this;
     }
 

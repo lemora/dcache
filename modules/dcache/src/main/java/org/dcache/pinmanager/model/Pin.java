@@ -8,7 +8,7 @@ import javax.annotation.concurrent.Immutable;
 public final class Pin {
 
     public enum State {
-        PINNING, PINNED, UNPINNING, READY_TO_UNPIN, FAILED_TO_UNPIN
+        READY_TO_PIN, PINNING, PINNED, READY_TO_UNPIN, UNPINNING, FAILED_TO_UNPIN
     }
 
     private final long id;
